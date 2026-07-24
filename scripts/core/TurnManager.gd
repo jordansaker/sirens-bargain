@@ -155,6 +155,58 @@ func charge_tribute(
 	plays_this_turn += plays_needed
 	return owed
 
+func play_slippery_eel(
+	card: CardData,
+	target_id: int,
+	stolen_card: CardData,
+	dest_realm: String,
+) -> bool:
+	if not can_play():
+		return false
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return false
+	if card.action_effect != "slippery_eel":
+		return false
+	if target_id == player.id:
+		return false
+	var target_exists := false
+	for p in game_state.players:
+		if p.id == target_id:
+			target_exists = true
+			break
+	if not target_exists:
+		return false
+	if not ActionResolver.slippery_eel(game_state, target_id, stolen_card, dest_realm):
+		return false
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	return true
+
+func play_toll_of_the_tides(card: CardData, target_id: int) -> Dictionary:
+	var empty: Dictionary = {}
+	if not can_play():
+		return empty
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return empty
+	if card.action_effect != "toll_of_the_tides":
+		return empty
+	if target_id == player.id:
+		return empty
+	var target_exists := false
+	for p in game_state.players:
+		if p.id == target_id:
+			target_exists = true
+			break
+	if not target_exists:
+		return empty
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	return ActionResolver.toll_of_the_tides(game_state, target_id)
+
 func play_mermaids_feast(card: CardData) -> Dictionary:
 	var empty: Dictionary = {}
 	if not can_play():

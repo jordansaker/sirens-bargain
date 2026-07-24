@@ -195,6 +195,310 @@ func test_mermaids_feast_broke_opponent_pays_nothing() -> void:
 	assert_eq(paid, 0)
 	assert_eq(charger.total_bank_value(), 0)
 
+# ---- Toll of the Tides ----
+
+func _toll(id: String = "toll_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Toll of the Tides"
+	c.type = CardData.Type.ACTION
+	c.value = 3
+	c.action_effect = "toll_of_the_tides"
+	return c
+
+func test_toll_charges_chosen_opponent_five() -> void:
+	var gs := _game(3, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 2)
+	assert_eq(owed.size(), 1)
+	assert_eq(int(owed[2]), 5)
+	assert_false(owed.has(1), "Only the chosen opponent is charged")
+
+func test_toll_rejects_self_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 0)
+	assert_true(owed.is_empty())
+	assert_true(charger.hand.has(toll))
+	assert_eq(tm.plays_this_turn, 0)
+
+func test_toll_rejects_unknown_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 99)
+	assert_true(owed.is_empty())
+	assert_true(charger.hand.has(toll))
+
+func test_toll_consumes_one_play_and_discards() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var toll := _toll()
+	charger.hand.append(toll)
+	tm.play_toll_of_the_tides(toll, 1)
+	assert_eq(tm.plays_this_turn, 1)
+	assert_true(gs.discard_pile.has(toll))
+	assert_false(charger.hand.has(toll))
+
+func test_toll_rejects_when_no_plays_remaining() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	tm.plays_this_turn = 3
+	var charger := gs.current_player()
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 1)
+	assert_true(owed.is_empty())
+	assert_true(charger.hand.has(toll))
+
+func test_toll_rejects_wrong_action_effect() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var wrong := _feast()
+	charger.hand.append(wrong)
+	var owed := tm.play_toll_of_the_tides(wrong, 1)
+	assert_true(owed.is_empty())
+	assert_true(charger.hand.has(wrong))
+
+func test_toll_rejects_card_not_in_hand() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var stray := _toll("stray")
+	var owed := tm.play_toll_of_the_tides(stray, 1)
+	assert_true(owed.is_empty())
+
+func test_toll_broke_opponent_pays_partial() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var victim := gs.players[1]
+	victim.bank.append(_pearl("v", 2))
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 1)
+	assert_eq(int(owed[1]), 5)
+	var paid := PaymentResolver.settle_greedy(victim, charger, int(owed[1]))
+	assert_eq(paid, 2, "Broke victim pays what they have")
+	assert_eq(charger.total_bank_value(), 2)
+	assert_eq(victim.bank.size(), 0)
+
+func test_toll_opponent_pays_full_via_settle_greedy() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var victim := gs.players[1]
+	# Bank of [5, 3] → smallest-first takes 3 then 5, overpaying by 3.
+	# This preserves the pattern (smallest coins go first) at the cost of
+	# some overpay — the payer keeps high-denomination cards only when the
+	# small change already covers the debt.
+	victim.bank.append_array([_pearl("v1", 5), _pearl("v2", 3)])
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 1)
+	var paid := PaymentResolver.settle_greedy(victim, charger, int(owed[1]))
+	assert_eq(paid, 8, "Greedy takes smallest coins first, no change given")
+	assert_eq(victim.bank.size(), 0)
+	assert_eq(charger.total_bank_value(), 8)
+
+func test_toll_opponent_keeps_big_coin_when_small_change_covers() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	var victim := gs.players[1]
+	victim.bank.append_array([_pearl("v_ten", 10), _pearl("v_five", 5)])
+	var toll := _toll()
+	charger.hand.append(toll)
+	var owed := tm.play_toll_of_the_tides(toll, 1)
+	var paid := PaymentResolver.settle_greedy(victim, charger, int(owed[1]))
+	assert_eq(paid, 5, "5 exactly covers 5")
+	assert_eq(victim.bank.size(), 1, "10-pearl preserved")
+
+# ---- Slippery Eel ----
+
+func _realm_card(id: String, realm: String, value: int = 2) -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Test %s" % realm
+	c.type = CardData.Type.REALM
+	c.value = value
+	c.realm = realm
+	return c
+
+func _wild_card(id: String, realms: Array[String], value: int = 2) -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Test Wild"
+	c.type = CardData.Type.WILD_REALM
+	c.value = value
+	c.realms = realms
+	return c
+
+func _eel(id: String = "eel_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Slippery Eel"
+	c.type = CardData.Type.ACTION
+	c.value = 3
+	c.action_effect = "slippery_eel"
+	return c
+
+func _stock_realm(p: PlayerState, realm: String, count: int) -> void:
+	for i in range(count):
+		var c := _realm_card("%s_p%d_%d" % [realm, p.id, i], realm)
+		p.hand.append(c)
+		p.play_realm(c, realm)
+
+func test_eel_steals_loose_realm_card() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2) # incomplete (needs 3)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_true(tm.play_slippery_eel(eel, 1, stolen, "Kelp Forest"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 1)
+	assert_eq((thief.realms["Kelp Forest"] as Array).size(), 1)
+	assert_true((thief.realms["Kelp Forest"] as Array).has(stolen))
+
+func test_eel_cannot_steal_from_completed_set() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3) # complete
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 1, stolen, "Kelp Forest"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 3, "Untouched")
+	assert_false(thief.realms.has("Kelp Forest"))
+	assert_true(thief.hand.has(eel), "Rejected eel stays in hand")
+	assert_eq(tm.plays_this_turn, 0)
+
+func test_eel_cannot_steal_card_not_owned_by_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var stray := _realm_card("stray", "Kelp Forest")
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 1, stray, "Kelp Forest"))
+	assert_true(thief.hand.has(eel))
+
+func test_eel_rejects_self_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	_stock_realm(thief, "Kelp Forest", 2)
+	var own_card: CardData = (thief.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 0, own_card, "Kelp Forest"))
+	assert_true(thief.hand.has(eel))
+
+func test_eel_rejects_unknown_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 99, stolen, "Kelp Forest"))
+
+func test_eel_can_flip_stolen_wild_to_different_realm() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	# Target lays a wild in Kelp Forest (incomplete: 1 wild, needs 3)
+	var wild := _wild_card("w1", ["Kelp Forest", "Tide Pools"] as Array[String], 1)
+	target.hand.append(wild)
+	target.play_realm(wild, "Kelp Forest")
+	var eel := _eel()
+	thief.hand.append(eel)
+	# Thief steals it and places under Tide Pools instead
+	assert_true(tm.play_slippery_eel(eel, 1, wild, "Tide Pools"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 0)
+	assert_eq((thief.realms["Tide Pools"] as Array).size(), 1)
+
+func test_eel_rejects_wild_placed_in_incompatible_realm() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	var wild := _wild_card("w1", ["Kelp Forest", "Tide Pools"] as Array[String], 1)
+	target.hand.append(wild)
+	target.play_realm(wild, "Kelp Forest")
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 1, wild, "Sunken Temple"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 1, "Wild still there")
+	assert_true(thief.hand.has(eel))
+
+func test_eel_consumes_one_play_and_discards() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	tm.play_slippery_eel(eel, 1, stolen, "Kelp Forest")
+	assert_eq(tm.plays_this_turn, 1)
+	assert_true(gs.discard_pile.has(eel))
+	assert_false(thief.hand.has(eel))
+
+func test_eel_rejects_when_no_plays_remaining() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	tm.plays_this_turn = 3
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 1, stolen, "Kelp Forest"))
+	assert_true(thief.hand.has(eel))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 2, "Untouched")
+
+func test_eel_rejects_wrong_action_effect() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var wrong := _feast()
+	thief.hand.append(wrong)
+	assert_false(tm.play_slippery_eel(wrong, 1, stolen, "Kelp Forest"))
+	assert_true(thief.hand.has(wrong))
+
+func test_eel_rejects_card_not_in_hand() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2)
+	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	var stray := _eel("stray")
+	assert_false(tm.play_slippery_eel(stray, 1, stolen, "Kelp Forest"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 2, "Untouched")
+
 func test_mermaids_feast_opponent_pays_via_settle_greedy() -> void:
 	var gs := _game(3, [] as Array[CardData])
 	var tm := TurnManager.new(gs)

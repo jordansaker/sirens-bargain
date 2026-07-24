@@ -102,6 +102,13 @@ func attach_modifier(card: CardData, realm: String) -> void:
 	mods.append(card)
 	realm_modifiers[realm] = mods
 
+func receive_realm_card(card: CardData, target_realm: String) -> void:
+	assert(card.type == CardData.Type.REALM or card.type == CardData.Type.WILD_REALM,
+		"Only realm and wild cards can be received into a realm")
+	assert(card.can_be_assigned_to(target_realm),
+		"Card cannot be assigned to %s" % target_realm)
+	_append_to_realm(card, target_realm)
+
 func receive_payment(cards: Array[CardData]) -> void:
 	for c in cards:
 		bank.append(c)
