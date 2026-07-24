@@ -85,99 +85,94 @@ func play_pearl_palace(card: CardData, target_realm: String) -> bool:
 	plays_this_turn += 1
 	return true
 
-# Play a tribute against opponents. Returns a { player_id: amount_owed } map
-# on success, or an empty dict if the play is illegal. Payment is a separate
-# step — the caller uses PaymentResolver once defensive plays (Siren's Refusal,
-# phase 5) have had their chance to intervene.
+# --- Refusable actions ---------------------------------------------------
 #
-# charger_realm — one of the charger's laid realms. For standard tributes it
-# must be one of the tribute's realms; for Siren's Toll it can be any realm
-# the charger owns cards in.
-# target_player — required for Siren's Toll, ignored otherwise.
-# high_tide_card — optional High Tide from the charger's hand; doubles the
-# rent and consumes a second card play.
-func charge_tribute(
-	tribute_card: CardData,
-	charger_realm: String,
-	target_player: int = -1,
-	high_tide_card: CardData = null,
-) -> Dictionary:
-	var empty: Dictionary = {}
-	var plays_needed: int = 2 if high_tide_card != null else 1
-	if plays_this_turn + plays_needed > MAX_PLAYS:
-		return empty
-	var charger := game_state.current_player()
-	if not charger.hand.has(tribute_card):
-		return empty
-	if tribute_card.type != CardData.Type.TRIBUTE:
-		return empty
-	if high_tide_card != null:
-		if not charger.hand.has(high_tide_card):
-			return empty
-		if high_tide_card.action_effect != "high_tide":
-			return empty
-	var count_in_realm := 0
-	if charger.realms.has(charger_realm):
-		count_in_realm = (charger.realms[charger_realm] as Array).size()
-	if count_in_realm == 0:
-		return empty
+# Each refusable action is a two-step protocol:
+#   1. initiate_X(...)  → returns PendingAction, consumes the play, discards
+#                          the action card. Effect NOT applied yet.
+#   2. resolve_pending() → applies the effect for any target whose refusal
+#                          stack is even (including zero refusals), then
+#                          moves all spent refusal cards to discard and
+#                          clears game_state.pending_action.
+#
+# Between the two steps, callers can call refuse(...) to add Siren's Refusal
+# cards to the pending action's per-target stacks. Refusals do NOT consume
+# the current player's 3-play budget — they're reactive out-of-turn plays.
+#
+# Convenience: the pre-existing play_X wrappers still exist and just do
+# initiate + resolve back-to-back (i.e. no refusal window).
 
-	var is_sirens_toll := tribute_card.realms.is_empty()
-	var payers: Array[int] = []
-	if is_sirens_toll:
-		if target_player < 0 or target_player == charger.id:
-			return empty
-		var found := false
-		for p in game_state.players:
-			if p.id == target_player:
-				found = true
-				break
-		if not found:
-			return empty
-		payers.append(target_player)
-	else:
-		if not tribute_card.realms.has(charger_realm):
-			return empty
-		for p in game_state.players:
-			if p.id != charger.id:
-				payers.append(p.id)
-
-	var per_payer := RentCalculator.rent(charger, charger_realm, high_tide_card != null)
-	var owed: Dictionary = {}
-	for pid in payers:
-		owed[pid] = per_payer
-
-	charger.hand.erase(tribute_card)
-	game_state.discard_pile.append(tribute_card)
-	if high_tide_card != null:
-		charger.hand.erase(high_tide_card)
-		game_state.discard_pile.append(high_tide_card)
-	plays_this_turn += plays_needed
-	return owed
-
-func play_krakens_grasp(card: CardData, target_id: int, realm_name: String) -> bool:
+func initiate_slippery_eel(
+	card: CardData,
+	target_id: int,
+	stolen_card: CardData,
+	dest_realm: String,
+) -> PendingAction:
 	if not can_play():
-		return false
+		return null
 	var player := game_state.current_player()
 	if not player.hand.has(card):
-		return false
-	if card.action_effect != "krakens_grasp":
-		return false
+		return null
+	if card.action_effect != "slippery_eel":
+		return null
 	if target_id == player.id:
-		return false
-	var target_exists := false
-	for p in game_state.players:
-		if p.id == target_id:
-			target_exists = true
-			break
-	if not target_exists:
-		return false
-	if not ActionResolver.krakens_grasp(game_state, target_id, realm_name):
-		return false
+		return null
+	if not ActionResolver.can_slippery_eel(game_state, target_id, stolen_card, dest_realm):
+		return null
 	player.hand.erase(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
-	return true
+	var pending := PendingAction.new(
+		"slippery_eel", player.id, [target_id] as Array[int],
+		{ "stolen_card": stolen_card, "dest_realm": dest_realm },
+	)
+	game_state.pending_action = pending
+	return pending
+
+func play_slippery_eel(
+	card: CardData, target_id: int, stolen_card: CardData, dest_realm: String
+) -> bool:
+	if initiate_slippery_eel(card, target_id, stolen_card, dest_realm) == null:
+		return false
+	var result: Variant = resolve_pending()
+	return bool(result)
+
+func initiate_trade_winds(
+	card: CardData,
+	target_id: int,
+	own_card: CardData,
+	their_dest_realm: String,
+	their_card: CardData,
+	own_dest_realm: String,
+) -> PendingAction:
+	if not can_play():
+		return null
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return null
+	if card.action_effect != "trade_winds":
+		return null
+	if target_id == player.id:
+		return null
+	if not ActionResolver.can_trade_winds(
+		game_state, target_id,
+		own_card, their_dest_realm, their_card, own_dest_realm,
+	):
+		return null
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	var pending := PendingAction.new(
+		"trade_winds", player.id, [target_id] as Array[int],
+		{
+			"own_card": own_card,
+			"their_dest_realm": their_dest_realm,
+			"their_card": their_card,
+			"own_dest_realm": own_dest_realm,
+		},
+	)
+	game_state.pending_action = pending
+	return pending
 
 func play_trade_winds(
 	card: CardData,
@@ -187,98 +182,257 @@ func play_trade_winds(
 	their_card: CardData,
 	own_dest_realm: String,
 ) -> bool:
-	if not can_play():
+	if initiate_trade_winds(
+		card, target_id, own_card, their_dest_realm, their_card, own_dest_realm
+	) == null:
 		return false
-	var player := game_state.current_player()
-	if not player.hand.has(card):
-		return false
-	if card.action_effect != "trade_winds":
-		return false
-	if target_id == player.id:
-		return false
-	var target_exists := false
-	for p in game_state.players:
-		if p.id == target_id:
-			target_exists = true
-			break
-	if not target_exists:
-		return false
-	if not ActionResolver.trade_winds(
-		game_state, target_id,
-		own_card, their_dest_realm,
-		their_card, own_dest_realm,
-	):
-		return false
-	player.hand.erase(card)
-	game_state.discard_pile.append(card)
-	plays_this_turn += 1
-	return true
+	var result: Variant = resolve_pending()
+	return bool(result)
 
-func play_slippery_eel(
-	card: CardData,
-	target_id: int,
-	stolen_card: CardData,
-	dest_realm: String,
-) -> bool:
+func initiate_krakens_grasp(
+	card: CardData, target_id: int, realm_name: String
+) -> PendingAction:
 	if not can_play():
-		return false
+		return null
 	var player := game_state.current_player()
 	if not player.hand.has(card):
-		return false
-	if card.action_effect != "slippery_eel":
-		return false
+		return null
+	if card.action_effect != "krakens_grasp":
+		return null
 	if target_id == player.id:
-		return false
-	var target_exists := false
-	for p in game_state.players:
-		if p.id == target_id:
-			target_exists = true
-			break
-	if not target_exists:
-		return false
-	if not ActionResolver.slippery_eel(game_state, target_id, stolen_card, dest_realm):
-		return false
+		return null
+	if not ActionResolver.can_krakens_grasp(game_state, target_id, realm_name):
+		return null
 	player.hand.erase(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
-	return true
+	var pending := PendingAction.new(
+		"krakens_grasp", player.id, [target_id] as Array[int],
+		{ "realm_name": realm_name },
+	)
+	game_state.pending_action = pending
+	return pending
+
+func play_krakens_grasp(card: CardData, target_id: int, realm_name: String) -> bool:
+	if initiate_krakens_grasp(card, target_id, realm_name) == null:
+		return false
+	var result: Variant = resolve_pending()
+	return bool(result)
+
+func initiate_toll_of_the_tides(card: CardData, target_id: int) -> PendingAction:
+	if not can_play():
+		return null
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return null
+	if card.action_effect != "toll_of_the_tides":
+		return null
+	if target_id == player.id:
+		return null
+	if ActionResolver._player_by_id(game_state, target_id) == null:
+		return null
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	var pending := PendingAction.new(
+		"toll_of_the_tides", player.id, [target_id] as Array[int],
+		{ "per_target": ActionResolver.TOLL_OF_THE_TIDES_AMOUNT },
+	)
+	game_state.pending_action = pending
+	return pending
 
 func play_toll_of_the_tides(card: CardData, target_id: int) -> Dictionary:
-	var empty: Dictionary = {}
+	if initiate_toll_of_the_tides(card, target_id) == null:
+		return {}
+	var result: Variant = resolve_pending()
+	if result is Dictionary:
+		return result
+	return {}
+
+func initiate_mermaids_feast(card: CardData) -> PendingAction:
 	if not can_play():
-		return empty
+		return null
 	var player := game_state.current_player()
 	if not player.hand.has(card):
-		return empty
-	if card.action_effect != "toll_of_the_tides":
-		return empty
-	if target_id == player.id:
-		return empty
-	var target_exists := false
+		return null
+	if card.action_effect != "mermaids_feast":
+		return null
+	var targets: Array[int] = []
 	for p in game_state.players:
-		if p.id == target_id:
-			target_exists = true
-			break
-	if not target_exists:
-		return empty
+		if p.id != player.id:
+			targets.append(p.id)
 	player.hand.erase(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
-	return ActionResolver.toll_of_the_tides(game_state, target_id)
+	var pending := PendingAction.new(
+		"mermaids_feast", player.id, targets,
+		{ "per_target": ActionResolver.MERMAIDS_FEAST_AMOUNT },
+	)
+	game_state.pending_action = pending
+	return pending
 
 func play_mermaids_feast(card: CardData) -> Dictionary:
-	var empty: Dictionary = {}
-	if not can_play():
-		return empty
-	var player := game_state.current_player()
-	if not player.hand.has(card):
-		return empty
-	if card.action_effect != "mermaids_feast":
-		return empty
-	player.hand.erase(card)
-	game_state.discard_pile.append(card)
-	plays_this_turn += 1
-	return ActionResolver.mermaids_feast(game_state)
+	if initiate_mermaids_feast(card) == null:
+		return {}
+	var result: Variant = resolve_pending()
+	if result is Dictionary:
+		return result
+	return {}
+
+# Tributes — standard (charges every opponent on a matching realm) or
+# Siren's Toll (charges one chosen opponent on any realm the charger owns).
+# High Tide is optional and consumes an extra play; it doubles the per-payer
+# amount for every non-cancelled target.
+func initiate_tribute(
+	tribute_card: CardData,
+	charger_realm: String,
+	target_player: int = -1,
+	high_tide_card: CardData = null,
+) -> PendingAction:
+	var plays_needed: int = 2 if high_tide_card != null else 1
+	if plays_this_turn + plays_needed > MAX_PLAYS:
+		return null
+	var charger := game_state.current_player()
+	if not charger.hand.has(tribute_card):
+		return null
+	if tribute_card.type != CardData.Type.TRIBUTE:
+		return null
+	if high_tide_card != null:
+		if not charger.hand.has(high_tide_card):
+			return null
+		if high_tide_card.action_effect != "high_tide":
+			return null
+	var count_in_realm := 0
+	if charger.realms.has(charger_realm):
+		count_in_realm = (charger.realms[charger_realm] as Array).size()
+	if count_in_realm == 0:
+		return null
+
+	var is_sirens_toll := tribute_card.realms.is_empty()
+	var payers: Array[int] = []
+	if is_sirens_toll:
+		if target_player < 0 or target_player == charger.id:
+			return null
+		if ActionResolver._player_by_id(game_state, target_player) == null:
+			return null
+		payers.append(target_player)
+	else:
+		if not tribute_card.realms.has(charger_realm):
+			return null
+		for p in game_state.players:
+			if p.id != charger.id:
+				payers.append(p.id)
+
+	var per_payer := RentCalculator.rent(charger, charger_realm, high_tide_card != null)
+
+	charger.hand.erase(tribute_card)
+	game_state.discard_pile.append(tribute_card)
+	if high_tide_card != null:
+		charger.hand.erase(high_tide_card)
+		game_state.discard_pile.append(high_tide_card)
+	plays_this_turn += plays_needed
+
+	var kind := "sirens_toll" if is_sirens_toll else "tribute"
+	var pending := PendingAction.new(
+		kind, charger.id, payers,
+		{ "per_target": per_payer, "charger_realm": charger_realm },
+	)
+	game_state.pending_action = pending
+	return pending
+
+func charge_tribute(
+	tribute_card: CardData,
+	charger_realm: String,
+	target_player: int = -1,
+	high_tide_card: CardData = null,
+) -> Dictionary:
+	if initiate_tribute(tribute_card, charger_realm, target_player, high_tide_card) == null:
+		return {}
+	var result: Variant = resolve_pending()
+	if result is Dictionary:
+		return result
+	return {}
+
+# Add a Siren's Refusal to the pending action's stack for target_id. The
+# refuser is either the target defending, or the initiator counter-refusing.
+# Alternation is enforced: the same side can't play two refusals in a row.
+# The card is spent immediately (moved to discard) regardless of whether a
+# later counter neutralises it.
+func refuse(target_id: int, refuser_id: int, refusal_card: CardData) -> bool:
+	var pending := game_state.pending_action
+	if pending == null:
+		return false
+	if not pending.targets.has(target_id):
+		return false
+	if pending.next_refuser_for(target_id) != refuser_id:
+		return false
+	var refuser := ActionResolver._player_by_id(game_state, refuser_id)
+	if refuser == null:
+		return false
+	if not refuser.hand.has(refusal_card):
+		return false
+	if refusal_card.action_effect != "sirens_refusal":
+		return false
+	refuser.hand.erase(refusal_card)
+	game_state.discard_pile.append(refusal_card)
+	pending.push_refusal(target_id, refusal_card)
+	return true
+
+# Apply the pending action for every non-cancelled target. Returns:
+#   Dictionary  — for owed-map actions (tribute, sirens_toll, toll_of_the_tides,
+#                 mermaids_feast). Keyed by target_id; cancelled targets omitted.
+#   bool        — for one-shot theft/swap actions (slippery_eel, trade_winds,
+#                 krakens_grasp). true if the effect actually fired.
+#   null        — no pending action to resolve.
+#
+# Refusal cards are already in the discard pile (moved when played); the
+# stacks themselves are just cleared alongside pending_action.
+func resolve_pending() -> Variant:
+	var pending := game_state.pending_action
+	if pending == null:
+		return null
+	var result: Variant = null
+	match pending.kind:
+		"slippery_eel":
+			var target_id: int = pending.targets[0]
+			if pending.is_cancelled_for(target_id):
+				result = false
+			else:
+				var stolen_card: CardData = pending.payload["stolen_card"]
+				var dest_realm: String = pending.payload["dest_realm"]
+				result = ActionResolver.slippery_eel(
+					game_state, target_id, stolen_card, dest_realm
+				)
+		"trade_winds":
+			var target_id: int = pending.targets[0]
+			if pending.is_cancelled_for(target_id):
+				result = false
+			else:
+				result = ActionResolver.trade_winds(
+					game_state, target_id,
+					pending.payload["own_card"],
+					pending.payload["their_dest_realm"],
+					pending.payload["their_card"],
+					pending.payload["own_dest_realm"],
+				)
+		"krakens_grasp":
+			var target_id: int = pending.targets[0]
+			if pending.is_cancelled_for(target_id):
+				result = false
+			else:
+				result = ActionResolver.krakens_grasp(
+					game_state, target_id, pending.payload["realm_name"]
+				)
+		"toll_of_the_tides", "tribute", "sirens_toll", "mermaids_feast":
+			var per: int = int(pending.payload["per_target"])
+			var owed: Dictionary = {}
+			for t in pending.effective_targets():
+				owed[t] = per
+			result = owed
+		_:
+			pass
+	game_state.pending_action = null
+	return result
 
 func play_ride_the_current(card: CardData) -> bool:
 	if not can_play():

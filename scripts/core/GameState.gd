@@ -6,6 +6,7 @@ var draw_pile: Array[CardData] = []
 var discard_pile: Array[CardData] = []
 var current_player_index: int = 0
 var rng: RandomNumberGenerator
+var pending_action: PendingAction = null
 
 func _init(num_players: int, deck: Array[CardData], seed_value: int = 0) -> void:
 	rng = RandomNumberGenerator.new()

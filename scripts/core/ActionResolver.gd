@@ -150,3 +150,59 @@ static func _find_realm(player: PlayerState, card: CardData) -> String:
 		if stack.has(card):
 			return r
 	return ""
+
+static func _player_by_id(gs: GameState, id: int) -> PlayerState:
+	for p in gs.players:
+		if p.id == id:
+			return p
+	return null
+
+# Non-mutating preflights used by TurnManager.initiate_X — check the same
+# conditions the resolver checks, without changing any state.
+
+static func can_slippery_eel(
+	gs: GameState, target_id: int, stolen_card: CardData, dest_realm: String
+) -> bool:
+	var target := _player_by_id(gs, target_id)
+	if target == null:
+		return false
+	var source_realm := _find_realm(target, stolen_card)
+	if source_realm == "":
+		return false
+	if target.is_realm_complete(source_realm):
+		return false
+	return stolen_card.can_be_assigned_to(dest_realm)
+
+static func can_trade_winds(
+	gs: GameState,
+	target_id: int,
+	own_card: CardData,
+	their_dest_realm: String,
+	their_card: CardData,
+	own_dest_realm: String,
+) -> bool:
+	var initiator := gs.current_player()
+	var target := _player_by_id(gs, target_id)
+	if target == null:
+		return false
+	var own_source := _find_realm(initiator, own_card)
+	if own_source == "":
+		return false
+	if initiator.is_realm_complete(own_source):
+		return false
+	var their_source := _find_realm(target, their_card)
+	if their_source == "":
+		return false
+	if target.is_realm_complete(their_source):
+		return false
+	if not own_card.can_be_assigned_to(their_dest_realm):
+		return false
+	return their_card.can_be_assigned_to(own_dest_realm)
+
+static func can_krakens_grasp(gs: GameState, target_id: int, realm_name: String) -> bool:
+	var target := _player_by_id(gs, target_id)
+	if target == null:
+		return false
+	if not target.realms.has(realm_name):
+		return false
+	return target.is_realm_complete(realm_name)
