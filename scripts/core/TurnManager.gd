@@ -31,7 +31,23 @@ func bank_card(card: CardData) -> bool:
 	var player := game_state.current_player()
 	if not player.hand.has(card):
 		return false
+	if not card.can_bank():
+		return false
 	player.bank_card(card)
+	plays_this_turn += 1
+	return true
+
+func play_realm(card: CardData, target_realm: String) -> bool:
+	if not can_play():
+		return false
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return false
+	if card.type != CardData.Type.REALM and card.type != CardData.Type.WILD_REALM:
+		return false
+	if not card.can_be_assigned_to(target_realm):
+		return false
+	player.play_realm(card, target_realm)
 	plays_this_turn += 1
 	return true
 

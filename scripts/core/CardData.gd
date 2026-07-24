@@ -18,6 +18,21 @@ enum Type {
 @export var rent_tiers: Array[int] = []
 @export var action_effect: String = ""
 
+func is_rainbow_conch() -> bool:
+	return id.begins_with("wild_rainbow_conch")
+
+func can_bank() -> bool:
+	return not is_rainbow_conch()
+
+func can_be_assigned_to(target_realm: String) -> bool:
+	match type:
+		Type.REALM:
+			return realm == target_realm
+		Type.WILD_REALM:
+			return realms.has(target_realm)
+		_:
+			return false
+
 static func type_to_string(t: int) -> String:
 	match t:
 		Type.REALM: return "REALM"

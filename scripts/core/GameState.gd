@@ -18,6 +18,19 @@ func _init(num_players: int, deck: Array[CardData], seed_value: int = 0) -> void
 func current_player() -> PlayerState:
 	return players[current_player_index]
 
+func sets_to_win() -> int:
+	return 4 if players.size() == 2 else 3
+
+func winner() -> int:
+	var target := sets_to_win()
+	for p in players:
+		if p.completed_realm_count() >= target:
+			return p.id
+	return -1
+
+func is_game_over() -> bool:
+	return winner() != -1
+
 func advance_player() -> void:
 	current_player_index = (current_player_index + 1) % players.size()
 
