@@ -155,6 +155,38 @@ func charge_tribute(
 	plays_this_turn += plays_needed
 	return owed
 
+func play_mermaids_feast(card: CardData) -> Dictionary:
+	var empty: Dictionary = {}
+	if not can_play():
+		return empty
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return empty
+	if card.action_effect != "mermaids_feast":
+		return empty
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	return ActionResolver.mermaids_feast(game_state)
+
+func play_ride_the_current(card: CardData) -> bool:
+	if not can_play():
+		return false
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return false
+	if card.action_effect != "ride_the_current":
+		return false
+	# Remove from hand up-front so the card can't be redrawn if the deck runs
+	# out mid-effect, but delay putting it into the discard pile until AFTER
+	# the resolver has drawn — otherwise a reshuffle would pull the same Ride
+	# card straight back into the player's hand.
+	player.hand.erase(card)
+	plays_this_turn += 1
+	ActionResolver.ride_the_current(game_state)
+	game_state.discard_pile.append(card)
+	return true
+
 func end_turn(discards: Array[CardData] = []) -> void:
 	var player := game_state.current_player()
 	var over := player.hand.size() - HAND_LIMIT
