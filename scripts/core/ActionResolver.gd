@@ -101,6 +101,49 @@ static func trade_winds(
 	initiator.receive_realm_card(their_card, own_dest_realm)
 	return true
 
+# Steal an entire completed realm from an opponent. Realm cards move as-is
+# (wilds keep their current assignment); Cottage/Palace modifiers move with
+# the set. If the thief already had a Cottage or Palace on that realm, the
+# incoming duplicate is sent to the discard pile so the one-of-each invariant
+# holds. Returns true on success.
+static func krakens_grasp(gs: GameState, target_id: int, realm_name: String) -> bool:
+	var thief := gs.current_player()
+	var target: PlayerState = null
+	for p in gs.players:
+		if p.id == target_id:
+			target = p
+			break
+	if target == null:
+		return false
+	if not target.realms.has(realm_name):
+		return false
+	if not target.is_realm_complete(realm_name):
+		return false
+
+	var stolen_cards: Array[CardData] = target.realms[realm_name]
+	target.realms[realm_name] = [] as Array[CardData]
+	var thief_stack: Array[CardData] = thief.realms.get(realm_name, [] as Array[CardData])
+	thief_stack.append_array(stolen_cards)
+	thief.realms[realm_name] = thief_stack
+
+	if target.realm_modifiers.has(realm_name):
+		var stolen_mods: Array[CardData] = target.realm_modifiers[realm_name]
+		target.realm_modifiers.erase(realm_name)
+		var thief_mods: Array[CardData] = thief.realm_modifiers.get(
+			realm_name, [] as Array[CardData]
+		)
+		for m in stolen_mods:
+			var is_dup := (
+				(m.action_effect == "coral_cottage" and thief.has_cottage(realm_name))
+				or (m.action_effect == "pearl_palace" and thief.has_palace(realm_name))
+			)
+			if is_dup:
+				gs.discard_pile.append(m)
+			else:
+				thief_mods.append(m)
+		thief.realm_modifiers[realm_name] = thief_mods
+	return true
+
 static func _find_realm(player: PlayerState, card: CardData) -> String:
 	for r in player.realms.keys():
 		var stack: Array = player.realms[r]

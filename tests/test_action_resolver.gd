@@ -721,6 +721,199 @@ func test_trade_winds_rejects_card_not_in_hand() -> void:
 		stray, 1, mine, "Kelp Forest", theirs, "Tide Pools"
 	))
 
+# ---- Kraken's Grasp ----
+
+func _kraken(id: String = "kraken_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Kraken's Grasp"
+	c.type = CardData.Type.ACTION
+	c.value = 5
+	c.action_effect = "krakens_grasp"
+	return c
+
+func _cottage_card(id: String = "cottage_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Coral Cottage"
+	c.type = CardData.Type.ACTION
+	c.value = 3
+	c.action_effect = "coral_cottage"
+	return c
+
+func _palace_card(id: String = "palace_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Pearl Palace"
+	c.type = CardData.Type.ACTION
+	c.value = 4
+	c.action_effect = "pearl_palace"
+	return c
+
+func test_kraken_steals_completed_realm() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3) # complete
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_true(tm.play_krakens_grasp(kraken, 1, "Kelp Forest"))
+	assert_eq((thief.realms["Kelp Forest"] as Array).size(), 3)
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 0)
+	assert_true(thief.is_realm_complete("Kelp Forest"))
+
+func test_kraken_refuses_incomplete_realm() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 2) # incomplete
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_false(tm.play_krakens_grasp(kraken, 1, "Kelp Forest"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 2, "Untouched")
+	assert_true(thief.hand.has(kraken))
+	assert_eq(tm.plays_this_turn, 0)
+
+func test_kraken_refuses_realm_target_does_not_own() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_false(tm.play_krakens_grasp(kraken, 1, "Kelp Forest"))
+	assert_true(thief.hand.has(kraken))
+
+func test_kraken_rejects_self_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	_stock_realm(thief, "Kelp Forest", 3)
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_false(tm.play_krakens_grasp(kraken, 0, "Kelp Forest"))
+	assert_true(thief.hand.has(kraken))
+
+func test_kraken_rejects_unknown_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_false(tm.play_krakens_grasp(kraken, 99, "Kelp Forest"))
+
+func test_kraken_transfers_cottage_and_palace_with_the_set() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Tide Pools", 2) # complete (Tide Pools needs 2)
+	var cottage := _cottage_card()
+	var palace := _palace_card()
+	target.hand.append_array([cottage, palace])
+	target.attach_modifier(cottage, "Tide Pools")
+	target.attach_modifier(palace, "Tide Pools")
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_true(tm.play_krakens_grasp(kraken, 1, "Tide Pools"))
+	assert_true(thief.has_cottage("Tide Pools"))
+	assert_true(thief.has_palace("Tide Pools"))
+	assert_false(target.has_cottage("Tide Pools"))
+	assert_false(target.has_palace("Tide Pools"))
+	# Rent should compute using thief's new set + modifiers
+	# Tide Pools base rent for 2 = 2, +3 cottage +4 palace = 9
+	assert_eq(RentCalculator.rent(thief, "Tide Pools"), 9)
+
+func test_kraken_duplicate_cottage_goes_to_discard() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	# Both players have a completed Tide Pools with a cottage
+	_stock_realm(thief, "Tide Pools", 2)
+	_stock_realm(target, "Tide Pools", 2)
+	var thief_cottage := _cottage_card("thief_cottage")
+	thief.hand.append(thief_cottage)
+	thief.attach_modifier(thief_cottage, "Tide Pools")
+	var target_cottage := _cottage_card("target_cottage")
+	target.hand.append(target_cottage)
+	target.attach_modifier(target_cottage, "Tide Pools")
+	# Reset play counter so the Kraken's play is legal
+	tm.plays_this_turn = 0
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_true(tm.play_krakens_grasp(kraken, 1, "Tide Pools"))
+	# Thief still has just one cottage on Tide Pools (the duplicate went away)
+	var mods: Array = thief.realm_modifiers["Tide Pools"]
+	var cottage_count := 0
+	for m in mods:
+		if m.action_effect == "coral_cottage":
+			cottage_count += 1
+	assert_eq(cottage_count, 1, "Duplicate cottage dropped, not stacked")
+	assert_true(gs.discard_pile.has(target_cottage))
+
+func test_kraken_can_trigger_win_condition() -> void:
+	var gs := _game(3, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(thief, "Tide Pools", 2)
+	_stock_realm(thief, "Mystic Springs", 2)
+	_stock_realm(target, "Kelp Forest", 3)
+	assert_eq(gs.winner(), -1)
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_true(tm.play_krakens_grasp(kraken, 1, "Kelp Forest"))
+	assert_eq(gs.winner(), 0)
+	assert_true(gs.is_game_over())
+
+func test_kraken_consumes_one_play_and_discards() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3)
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	tm.play_krakens_grasp(kraken, 1, "Kelp Forest")
+	assert_eq(tm.plays_this_turn, 1)
+	assert_true(gs.discard_pile.has(kraken))
+	assert_false(thief.hand.has(kraken))
+
+func test_kraken_rejects_when_no_plays_remaining() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	tm.plays_this_turn = 3
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3)
+	var kraken := _kraken()
+	thief.hand.append(kraken)
+	assert_false(tm.play_krakens_grasp(kraken, 1, "Kelp Forest"))
+	assert_true(thief.hand.has(kraken))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 3, "Untouched")
+
+func test_kraken_rejects_wrong_action_effect() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3)
+	var wrong := _feast()
+	thief.hand.append(wrong)
+	assert_false(tm.play_krakens_grasp(wrong, 1, "Kelp Forest"))
+	assert_true(thief.hand.has(wrong))
+
+func test_kraken_rejects_card_not_in_hand() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var target := gs.players[1]
+	_stock_realm(target, "Kelp Forest", 3)
+	var stray := _kraken("stray")
+	assert_false(tm.play_krakens_grasp(stray, 1, "Kelp Forest"))
+	assert_eq((target.realms["Kelp Forest"] as Array).size(), 3, "Untouched")
+
 func test_mermaids_feast_opponent_pays_via_settle_greedy() -> void:
 	var gs := _game(3, [] as Array[CardData])
 	var tm := TurnManager.new(gs)
