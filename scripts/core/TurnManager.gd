@@ -155,6 +155,41 @@ func charge_tribute(
 	plays_this_turn += plays_needed
 	return owed
 
+func play_trade_winds(
+	card: CardData,
+	target_id: int,
+	own_card: CardData,
+	their_dest_realm: String,
+	their_card: CardData,
+	own_dest_realm: String,
+) -> bool:
+	if not can_play():
+		return false
+	var player := game_state.current_player()
+	if not player.hand.has(card):
+		return false
+	if card.action_effect != "trade_winds":
+		return false
+	if target_id == player.id:
+		return false
+	var target_exists := false
+	for p in game_state.players:
+		if p.id == target_id:
+			target_exists = true
+			break
+	if not target_exists:
+		return false
+	if not ActionResolver.trade_winds(
+		game_state, target_id,
+		own_card, their_dest_realm,
+		their_card, own_dest_realm,
+	):
+		return false
+	player.hand.erase(card)
+	game_state.discard_pile.append(card)
+	plays_this_turn += 1
+	return true
+
 func play_slippery_eel(
 	card: CardData,
 	target_id: int,

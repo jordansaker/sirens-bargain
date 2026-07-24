@@ -51,12 +51,7 @@ static func slippery_eel(
 			break
 	if target == null:
 		return false
-	var source_realm := ""
-	for r in target.realms.keys():
-		var stack: Array = target.realms[r]
-		if stack.has(stolen_card):
-			source_realm = r
-			break
+	var source_realm := _find_realm(target, stolen_card)
 	if source_realm == "":
 		return false
 	if target.is_realm_complete(source_realm):
@@ -66,3 +61,49 @@ static func slippery_eel(
 	target.pay_cards([] as Array[CardData], [stolen_card] as Array[CardData])
 	thief.receive_realm_card(stolen_card, dest_realm)
 	return true
+
+# Swap one realm card with an opponent. Both cards must be in incomplete
+# sets, and each must land in a realm it can legally be assigned to on the
+# receiving player's board. Returns true on success.
+static func trade_winds(
+	gs: GameState,
+	target_id: int,
+	own_card: CardData,
+	their_dest_realm: String,
+	their_card: CardData,
+	own_dest_realm: String,
+) -> bool:
+	var initiator := gs.current_player()
+	var target: PlayerState = null
+	for p in gs.players:
+		if p.id == target_id:
+			target = p
+			break
+	if target == null:
+		return false
+	var own_source := _find_realm(initiator, own_card)
+	if own_source == "":
+		return false
+	if initiator.is_realm_complete(own_source):
+		return false
+	var their_source := _find_realm(target, their_card)
+	if their_source == "":
+		return false
+	if target.is_realm_complete(their_source):
+		return false
+	if not own_card.can_be_assigned_to(their_dest_realm):
+		return false
+	if not their_card.can_be_assigned_to(own_dest_realm):
+		return false
+	initiator.pay_cards([] as Array[CardData], [own_card] as Array[CardData])
+	target.pay_cards([] as Array[CardData], [their_card] as Array[CardData])
+	target.receive_realm_card(own_card, their_dest_realm)
+	initiator.receive_realm_card(their_card, own_dest_realm)
+	return true
+
+static func _find_realm(player: PlayerState, card: CardData) -> String:
+	for r in player.realms.keys():
+		var stack: Array = player.realms[r]
+		if stack.has(card):
+			return r
+	return ""

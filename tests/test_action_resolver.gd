@@ -499,6 +499,228 @@ func test_eel_rejects_card_not_in_hand() -> void:
 	assert_false(tm.play_slippery_eel(stray, 1, stolen, "Kelp Forest"))
 	assert_eq((target.realms["Kelp Forest"] as Array).size(), 2, "Untouched")
 
+# ---- Trade Winds ----
+
+func _trade(id: String = "trade_1") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Trade Winds"
+	c.type = CardData.Type.ACTION
+	c.value = 3
+	c.action_effect = "trade_winds"
+	return c
+
+func test_trade_winds_swaps_two_realm_cards() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1) # incomplete
+	_stock_realm(you, "Tide Pools", 1) # incomplete
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_true(tm.play_trade_winds(
+		trade, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_eq((me.realms["Kelp Forest"] as Array).size(), 0)
+	assert_eq((you.realms["Kelp Forest"] as Array).size(), 1,
+		"My Kelp went to you")
+	assert_eq((me.realms["Tide Pools"] as Array).size(), 1,
+		"Your Tide came to me")
+	assert_eq((you.realms["Tide Pools"] as Array).size(), 0)
+
+func test_trade_winds_refuses_when_own_side_completed() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 3) # completed
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_eq((me.realms["Kelp Forest"] as Array).size(), 3, "Untouched")
+	assert_true(me.hand.has(trade))
+	assert_eq(tm.plays_this_turn, 0)
+
+func test_trade_winds_refuses_when_their_side_completed() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 2) # completed (Tide Pools needs 2)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_eq((you.realms["Tide Pools"] as Array).size(), 2, "Untouched")
+
+func test_trade_winds_refuses_incompatible_destination_for_own_card() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	# Try to send a plain Kelp Forest card to "Sunken Temple" on the target
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Sunken Temple", theirs, "Tide Pools"
+	))
+	assert_eq((me.realms["Kelp Forest"] as Array).size(), 1, "Untouched")
+
+func test_trade_winds_wild_can_flip_to_new_realm_on_receiver() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	# My wild lives in Kelp Forest; I'll trade it to you as Tide Pools
+	var wild := _wild_card("w1", ["Kelp Forest", "Tide Pools"] as Array[String], 1)
+	me.hand.append(wild)
+	me.play_realm(wild, "Kelp Forest")
+	_stock_realm(you, "Coral Gardens", 1)
+	var theirs: CardData = (you.realms["Coral Gardens"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_true(tm.play_trade_winds(
+		trade, 1, wild, "Tide Pools", theirs, "Coral Gardens"
+	))
+	assert_eq((you.realms["Tide Pools"] as Array).size(), 1,
+		"Wild landed under Tide Pools on receiver's side")
+	assert_eq((me.realms["Coral Gardens"] as Array).size(), 1)
+
+func test_trade_winds_rejects_self_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	_stock_realm(me, "Kelp Forest", 2)
+	var stack: Array = me.realms["Kelp Forest"]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 0, stack[0], "Kelp Forest", stack[1], "Kelp Forest"
+	))
+	assert_true(me.hand.has(trade))
+
+func test_trade_winds_rejects_unknown_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	_stock_realm(me, "Kelp Forest", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var stray := _realm_card("stray", "Tide Pools")
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 99, mine, "Kelp Forest", stray, "Tide Pools"
+	))
+
+func test_trade_winds_rejects_card_not_owned_by_initiator() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(you, "Tide Pools", 1)
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var stray := _realm_card("stray", "Kelp Forest")
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, stray, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_true(me.hand.has(trade))
+
+func test_trade_winds_rejects_card_not_owned_by_target() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	_stock_realm(me, "Kelp Forest", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var stray := _realm_card("stray", "Tide Pools")
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Tide Pools", stray, "Kelp Forest"
+	))
+	assert_true(me.hand.has(trade))
+
+func test_trade_winds_consumes_one_play_and_discards() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	tm.play_trade_winds(trade, 1, mine, "Kelp Forest", theirs, "Tide Pools")
+	assert_eq(tm.plays_this_turn, 1)
+	assert_true(gs.discard_pile.has(trade))
+	assert_false(me.hand.has(trade))
+
+func test_trade_winds_rejects_when_no_plays_remaining() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	tm.plays_this_turn = 3
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_true(me.hand.has(trade))
+	assert_eq((me.realms["Kelp Forest"] as Array).size(), 1, "Untouched")
+
+func test_trade_winds_rejects_wrong_action_effect() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var wrong := _feast()
+	me.hand.append(wrong)
+	assert_false(tm.play_trade_winds(
+		wrong, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+	assert_true(me.hand.has(wrong))
+
+func test_trade_winds_rejects_card_not_in_hand() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var stray := _trade("stray")
+	assert_false(tm.play_trade_winds(
+		stray, 1, mine, "Kelp Forest", theirs, "Tide Pools"
+	))
+
 func test_mermaids_feast_opponent_pays_via_settle_greedy() -> void:
 	var gs := _game(3, [] as Array[CardData])
 	var tm := TurnManager.new(gs)
