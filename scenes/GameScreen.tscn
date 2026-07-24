@@ -1,0 +1,494 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/GameScreen.gd" id="1_gamescreen"]
+[ext_resource type="PackedScene" path="res://scenes/PlayerBoardView.tscn" id="2_opponent"]
+[ext_resource type="PackedScene" path="res://scenes/PlayerBoardView.tscn" id="3_player"]
+
+[node name="GameScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_gamescreen")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.039, 0.086, 0.149, 1)
+
+[node name="Root" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 14.0
+offset_top = 18.0
+offset_right = -14.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="GameCol" type="VBoxContainer" parent="Root"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="OpponentBoard" parent="Root/GameCol" instance=ExtResource("2_opponent")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="MidTable" type="HBoxContainer" parent="Root/GameCol"]
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="DrawPileBox" type="PanelContainer" parent="Root/GameCol/MidTable"]
+custom_minimum_size = Vector2(44, 62)
+layout_mode = 2
+
+[node name="DrawInner" type="VBoxContainer" parent="Root/GameCol/MidTable/DrawPileBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="DrawLabel" type="Label" parent="Root/GameCol/MidTable/DrawPileBox/DrawInner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+
+[node name="DrawTag" type="Label" parent="Root/GameCol/MidTable/DrawPileBox/DrawInner"]
+layout_mode = 2
+text = "draw"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="TurnBlock" type="VBoxContainer" parent="Root/GameCol/MidTable"]
+layout_mode = 2
+alignment = 1
+
+[node name="TurnLabel" type="Label" parent="Root/GameCol/MidTable/TurnBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "…"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+
+[node name="PlaysLabel" type="Label" parent="Root/GameCol/MidTable/TurnBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "3 plays left"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="DiscardPileBox" type="PanelContainer" parent="Root/GameCol/MidTable"]
+custom_minimum_size = Vector2(44, 62)
+layout_mode = 2
+
+[node name="DiscardInner" type="VBoxContainer" parent="Root/GameCol/MidTable/DiscardPileBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="DiscardTopBanner" type="ColorRect" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+color = Color(0.133, 0.188, 0.310, 1)
+
+[node name="DiscardTopLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+size_flags_vertical = 3
+text = ""
+autowrap_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+
+[node name="DiscardLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+
+[node name="DiscardTag" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+layout_mode = 2
+text = "discard"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 10
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="PlayerBoard" parent="Root/GameCol" instance=ExtResource("3_player")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Spacer" type="Control" parent="Root/GameCol"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PromptLabel" type="Label" parent="Root/GameCol"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="HandScroll" type="ScrollContainer" parent="Root/GameCol"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 108)
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+
+[node name="HandRow" type="HBoxContainer" parent="Root/GameCol/HandScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="Actions" type="HBoxContainer" parent="Root/GameCol"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="BankButton" type="Button" parent="Root/GameCol/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Bank it"
+theme_override_font_sizes/font_size = 13
+
+[node name="PlayButton" type="Button" parent="Root/GameCol/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Play card"
+theme_override_font_sizes/font_size = 13
+
+[node name="EndTurnButton" type="Button" parent="Root/GameCol/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "End turn"
+theme_override_font_sizes/font_size = 13
+
+[node name="LogCol" type="VBoxContainer" parent="Root"]
+layout_mode = 2
+custom_minimum_size = Vector2(140, 0)
+theme_override_constants/separation = 4
+
+[node name="LogTitle" type="Label" parent="Root/LogCol"]
+layout_mode = 2
+text = "Log"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+
+[node name="LogScroll" type="ScrollContainer" parent="Root/LogCol"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="LogList" type="VBoxContainer" parent="Root/LogCol/LogScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="ActionMenu" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -300.0
+offset_right = 260.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MenuMargin" type="MarginContainer" parent="ActionMenu"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="MenuVBox" type="VBoxContainer" parent="ActionMenu/MenuMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MenuTitle" type="Label" parent="ActionMenu/MenuMargin/MenuVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="MenuScroll" type="ScrollContainer" parent="ActionMenu/MenuMargin/MenuVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="MenuButtons" type="VBoxContainer" parent="ActionMenu/MenuMargin/MenuVBox/MenuScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="MenuCancel" type="Button" parent="ActionMenu/MenuMargin/MenuVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Cancel"
+theme_override_font_sizes/font_size = 14
+
+[node name="RealmPeek" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -260.0
+offset_top = -200.0
+offset_right = 260.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PeekMargin" type="MarginContainer" parent="RealmPeek"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="PeekVBox" type="VBoxContainer" parent="RealmPeek/PeekMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeekTitle" type="Label" parent="RealmPeek/PeekMargin/PeekVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="PeekSubtitle" type="Label" parent="RealmPeek/PeekMargin/PeekVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="PeekScroll" type="ScrollContainer" parent="RealmPeek/PeekMargin/PeekVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+custom_minimum_size = Vector2(0, 140)
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+
+[node name="PeekRow" type="HBoxContainer" parent="RealmPeek/PeekMargin/PeekVBox/PeekScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PeekClose" type="Button" parent="RealmPeek/PeekMargin/PeekVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Close"
+theme_override_font_sizes/font_size = 14
+
+[node name="CardPeekScrim" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.55)
+mouse_filter = 0
+
+[node name="CardPeek" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -170.0
+offset_top = -260.0
+offset_right = 170.0
+offset_bottom = 260.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="CardPeekMargin" type="MarginContainer" parent="CardPeek"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="CardPeekVBox" type="VBoxContainer" parent="CardPeek/CardPeekMargin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CardPeekBanner" type="Panel" parent="CardPeek/CardPeekMargin/CardPeekVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+
+[node name="CardPeekTitle" type="Label" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekBanner"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 16
+
+[node name="CardPeekBody" type="Panel" parent="CardPeek/CardPeekMargin/CardPeekVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CardPeekBodyMargin" type="MarginContainer" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekBody"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="CardPeekBodyVBox" type="VBoxContainer" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekBody/CardPeekBodyMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="CardPeekSubtype" type="Label" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekBody/CardPeekBodyMargin/CardPeekBodyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="CardPeekDescription" type="Label" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekBody/CardPeekBodyMargin/CardPeekBodyVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = ""
+autowrap_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.949, 0.964, 0.960, 1)
+
+[node name="CardPeekInfo" type="Panel" parent="CardPeek/CardPeekMargin/CardPeekVBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 74)
+layout_mode = 2
+
+[node name="CardPeekInfoMargin" type="MarginContainer" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekInfo"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="CardPeekInfoText" type="Label" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekInfo/CardPeekInfoMargin"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+horizontal_alignment = 0
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.768, 0.839, 0.886, 1)
+
+[node name="CardPeekActions" type="HBoxContainer" parent="CardPeek/CardPeekMargin/CardPeekVBox"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="CardPeekBank" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Bank"
+theme_override_font_sizes/font_size = 12
+
+[node name="CardPeekPlay" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Play"
+theme_override_font_sizes/font_size = 12
+
+[node name="CardPeekClose" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Close"
+theme_override_font_sizes/font_size = 12

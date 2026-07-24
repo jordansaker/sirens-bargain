@@ -32,10 +32,13 @@ func test_ride_the_current_draws_two_cards() -> void:
 	var gs := _game(2, _deck(10))
 	var tm := TurnManager.new(gs)
 	var player := gs.current_player()
+	# Filler so removing Ride doesn't empty the hand and trigger the
+	# empty-hand refill on top of Ride's own +2 draw.
+	player.hand.append(_pearl("filler"))
 	var ride := _ride()
 	player.hand.append(ride)
 	assert_true(tm.play_ride_the_current(ride))
-	assert_eq(player.hand.size(), 2, "Card left hand, 2 drawn")
+	assert_eq(player.hand.size(), 3, "Card left hand, filler still there, 2 drawn")
 	assert_false(player.hand.has(ride))
 
 func test_ride_the_current_discards_the_action() -> void:

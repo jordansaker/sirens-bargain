@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Siren's Bargain — screen mockup</title>
+<style>
+  :root {
+    --ink: #0B1D33;
+    --ink-deep: #0A1626;
+    --gold: #C9A227;
+    --panel: #14304F;
+    --panel-edge: #22496F;
+    --foam: #F2F6F5;
+    --mist: #C4D6E2;
+    --haze: #9DB6C4;
+    --pearl: #EDE6D4;
+    --cliff: #1F4370;
+    --steel: #2C5A8F;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #EFECE4;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 500; color: #2C2C2A; margin: 0; }
+  p.note { font-size: 13px; color: #5F5E5A; margin: 0; max-width: 420px; text-align: center; line-height: 1.6; }
+  .phone {
+    width: 340px;
+    background: var(--ink-deep);
+    border-radius: 28px;
+    padding: 14px 12px;
+    border: 1px solid #D3D1C7;
+  }
+  .row { display: flex; gap: 4px; }
+  .barhead { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 10px; }
+  .who { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 500; color: var(--pearl); }
+  .name { font-size: 13px; color: var(--foam); }
+  .tag { font-size: 11px; color: var(--haze); }
+  .bank { display: flex; align-items: center; gap: 5px; }
+  .pearl-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--pearl); }
+  .bank span { font-size: 13px; font-weight: 500; color: var(--pearl); }
+
+  .chip { flex: 1; background: var(--ink); border-radius: 6px; overflow: hidden; border: 1px solid var(--panel-edge); }
+  .chip.done { border: 1px solid var(--gold); }
+  .chip .bar { height: 5px; }
+  .chip .count { padding: 5px 0; text-align: center; font-size: 11px; color: var(--mist); }
+  .chip.done .count { color: var(--pearl); }
+  .chip.empty { border: 1px dashed var(--panel-edge); }
+  .chip.empty .count { padding: 8px 0; color: #4E7FA8; }
+
+  .table {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    padding: 12px 4px;
+    border-top: 1px solid var(--panel);
+    border-bottom: 1px solid var(--panel);
+  }
+  .pile { width: 44px; height: 62px; border-radius: 7px; background: var(--ink); display: flex; align-items: center; justify-content: center; }
+  .pile.draw { border: 1px solid var(--gold); }
+  .pile.draw div { width: 16px; height: 16px; border-radius: 50%; background: var(--pearl); }
+  .pile.discard { border: 1px dashed var(--panel-edge); overflow: hidden; display: block; }
+  .pile.discard .top { height: 12px; background: #A79EE8; }
+  .pile.discard .lbl { padding-top: 14px; text-align: center; font-size: 11px; color: var(--haze); }
+  .turn { text-align: center; }
+  .turn .t1 { font-size: 13px; font-weight: 500; color: var(--pearl); }
+  .turn .t2 { font-size: 11px; color: var(--haze); padding-top: 2px; }
+
+  .hand { display: flex; gap: 6px; justify-content: center; padding: 0 4px 8px; }
+  .card { width: 54px; height: 76px; border-radius: 7px; background: var(--ink); border: 1px solid var(--gold); overflow: hidden; }
+  .card .banner { height: 14px; }
+  .card .label { padding: 6px 3px; text-align: center; font-size: 11px; color: var(--mist); }
+  .card.selected { height: 86px; margin-top: -10px; border: 1px solid #A79EE8; }
+  .card.selected .label { color: var(--pearl); }
+  .card.selected .hint { padding-top: 14px; text-align: center; font-size: 11px; color: #A79EE8; }
+
+  .actions { display: flex; gap: 8px; padding: 4px 4px 0; }
+  .btn { flex: 1; text-align: center; padding: 9px 0; border-radius: 8px; border: 1px solid var(--panel-edge); font-size: 12px; color: var(--mist); }
+  .btn.primary { background: var(--steel); border-color: var(--steel); color: var(--pearl); }
+</style>
+</head>
+<body>
+
+<h1>Siren's Bargain — game screen</h1>
+<p class="note">Portrait phone layout. Realms collapse into colour chips with a progress count; only the player's hand shows full cards.</p>
+
+<div class="phone">
+
+  <div class="barhead">
+    <div class="who">
+      <div class="avatar" style="background:#2C5A8F">C</div>
+      <span class="name">Coral</span>
+      <span class="tag">AI</span>
+    </div>
+    <div class="bank"><div class="pearl-dot"></div><span>12</span></div>
+  </div>
+
+  <div class="row" style="padding: 0 4px 12px;">
+    <div class="chip"><div class="bar" style="background:#E08585"></div><div class="count">2/3</div></div>
+    <div class="chip done"><div class="bar" style="background:#7FDCE8"></div><div class="count">2/2</div></div>
+    <div class="chip"><div class="bar" style="background:#E0C18A"></div><div class="count">1/2</div></div>
+    <div class="chip"><div class="bar" style="background:#BCC9D2"></div><div class="count">2/4</div></div>
+    <div class="chip empty"><div class="count">+</div></div>
+  </div>
+
+  <div class="table">
+    <div class="pile draw"><div></div></div>
+    <div class="turn">
+      <div class="t1">Your turn</div>
+      <div class="t2">2 plays left</div>
+    </div>
+    <div class="pile discard"><div class="top"></div><div class="lbl">discard</div></div>
+  </div>
+
+  <div class="barhead" style="padding: 12px 4px 8px;">
+    <div class="who">
+      <div class="avatar" style="background:#6E5AA8">M</div>
+      <span class="name">You</span>
+    </div>
+    <div class="bank"><div class="pearl-dot"></div><span>9</span></div>
+  </div>
+
+  <div class="row" style="padding: 0 4px 14px;">
+    <div class="chip done"><div class="bar" style="background:#F09CBA"></div><div class="count">3/3</div></div>
+    <div class="chip done"><div class="bar" style="background:#7FA8E8"></div><div class="count">2/2</div></div>
+    <div class="chip"><div class="bar" style="background:#EFC55E"></div><div class="count">2/3</div></div>
+    <div class="chip"><div class="bar" style="background:#9AD16C"></div><div class="count">1/3</div></div>
+    <div class="chip empty"><div class="count">+</div></div>
+  </div>
+
+  <div class="hand">
+    <div class="card"><div class="banner" style="background:#EFC55E"></div><div class="label">Toll</div></div>
+    <div class="card"><div class="banner" style="background:#EDE6D4"></div><div class="label">Pearls</div></div>
+    <div class="card selected"><div class="banner" style="background:#A79EE8"></div><div class="label">Kraken</div><div class="hint">tap</div></div>
+    <div class="card"><div class="banner" style="background:#7FC9B4"></div><div class="label">Kelp</div></div>
+    <div class="card"><div class="banner" style="background:#F4A87A"></div><div class="label">Pearl</div></div>
+  </div>
+
+  <div class="actions">
+    <div class="btn">Bank it</div>
+    <div class="btn primary">Play card</div>
+    <div class="btn">End turn</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,6 +1,11 @@
 class_name PlayerState
 extends RefCounted
 
+# Fired the moment `hand` becomes empty via `remove_from_hand`. TurnManager
+# hooks this to immediately refill via a 5-card draw — the "empty hand →
+# draw 5" rule fires whenever it happens, not just at start of turn.
+signal hand_emptied
+
 var id: int = 0
 var hand: Array[CardData] = []
 var bank: Array[CardData] = []
@@ -10,15 +15,21 @@ var realm_modifiers: Dictionary = {}
 func _init(player_id: int = 0) -> void:
 	id = player_id
 
-func bank_card(card: CardData) -> void:
+# Central hand-removal helper. Every path that takes a card out of hand
+# should go through this so the empty-hand refill fires reliably.
+func remove_from_hand(card: CardData) -> void:
 	assert(hand.has(card), "Card not in hand")
-	assert(card.can_bank(), "Card cannot be banked (Rainbow Conch)")
 	hand.erase(card)
+	if hand.is_empty():
+		hand_emptied.emit()
+
+func bank_card(card: CardData) -> void:
+	assert(card.can_bank(), "Card cannot be banked (Rainbow Conch)")
+	remove_from_hand(card)
 	bank.append(card)
 
 func discard_from_hand(card: CardData) -> void:
-	assert(hand.has(card), "Card not in hand")
-	hand.erase(card)
+	remove_from_hand(card)
 
 func total_bank_value() -> int:
 	var total := 0
@@ -27,12 +38,11 @@ func total_bank_value() -> int:
 	return total
 
 func play_realm(card: CardData, target_realm: String) -> void:
-	assert(hand.has(card), "Card not in hand")
 	assert(card.type == CardData.Type.REALM or card.type == CardData.Type.WILD_REALM,
 		"Card is not a realm or wild")
 	assert(card.can_be_assigned_to(target_realm),
 		"Card cannot be assigned to %s" % target_realm)
-	hand.erase(card)
+	remove_from_hand(card)
 	_append_to_realm(card, target_realm)
 
 func reassign_wild(card: CardData, from_realm: String, to_realm: String) -> void:
@@ -82,7 +92,6 @@ func has_palace(realm: String) -> bool:
 	return false
 
 func attach_modifier(card: CardData, realm: String) -> void:
-	assert(hand.has(card), "Modifier not in hand")
 	assert(card.type == CardData.Type.ACTION,
 		"Only action cards attach as modifiers")
 	assert(card.action_effect == "coral_cottage" or card.action_effect == "pearl_palace",
@@ -97,7 +106,7 @@ func attach_modifier(card: CardData, realm: String) -> void:
 			"Pearl Palace requires a Coral Cottage on %s" % realm)
 		assert(not has_palace(realm),
 			"%s already has a Pearl Palace" % realm)
-	hand.erase(card)
+	remove_from_hand(card)
 	var mods: Array[CardData] = modifiers_on(realm)
 	mods.append(card)
 	realm_modifiers[realm] = mods
@@ -110,8 +119,51 @@ func receive_realm_card(card: CardData, target_realm: String) -> void:
 	_append_to_realm(card, target_realm)
 
 func receive_payment(cards: Array[CardData]) -> void:
+	# Realm and wild cards received as payment are laid onto the receiver's
+	# board (auto-routed to the realm making the most progress). This keeps
+	# them playable instead of trapping them in the bank — historically a
+	# one-way leak that would stall late-game tributes.
 	for c in cards:
-		bank.append(c)
+		if c.type == CardData.Type.REALM or c.type == CardData.Type.WILD_REALM:
+			var dest := _pick_incoming_realm_destination(c)
+			if dest.is_empty():
+				# Truly no legal destination (shouldn't happen for any card
+				# in the deck) — fall through to banking so nothing is lost.
+				bank.append(c)
+			else:
+				_append_to_realm(c, dest)
+		else:
+			bank.append(c)
+
+# Greedy auto-router for realm/wild cards received as payment: prefer the
+# realm we already have the most progress in (skipping already-complete
+# sets so extra cards don't pile on a done set). Falls back to any legal
+# destination if every candidate is already complete.
+func _pick_incoming_realm_destination(card: CardData) -> String:
+	var candidates: Array[String] = []
+	match card.type:
+		CardData.Type.REALM:
+			candidates.append(card.realm)
+		CardData.Type.WILD_REALM:
+			if card.is_rainbow_conch():
+				for r in Realms.all_realms():
+					candidates.append(r)
+			else:
+				for r in card.realms:
+					candidates.append(r)
+	var best := ""
+	var best_score := -1
+	for r in candidates:
+		var stack: Array = realms.get(r, [])
+		if stack.size() >= Realms.size_of(r):
+			continue
+		var score: int = stack.size() + 1
+		if score > best_score:
+			best_score = score
+			best = r
+	if best.is_empty() and not candidates.is_empty():
+		best = candidates[0]
+	return best
 
 func pay_cards(from_bank: Array[CardData], from_realms: Array[CardData]) -> void:
 	for c in from_bank:

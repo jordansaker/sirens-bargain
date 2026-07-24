@@ -1,0 +1,157 @@
+<svg width="680" height="700" viewBox="0 0 680 700" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>Siren's Bargain card designs</title>
+<desc>Card anatomy, four sample card faces, the card back, and the ten-realm colour palette.</desc>
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .ts { font-size: 12px; fill: #5F5E5A; }
+  .leader { stroke: #B4B2A9; stroke-width: 0.5; stroke-dasharray: 3 3; }
+</style>
+<rect x="0" y="0" width="680" height="700" fill="#EFECE4"/>
+
+<rect x="50" y="40" width="180" height="252" rx="10" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="58" y="48" width="164" height="30" rx="6" fill="#F09CBA"/>
+<text x="140" y="68" text-anchor="middle" font-size="14" font-weight="500" fill="#4B1528">Coral gardens</text>
+<rect x="58" y="84" width="164" height="96" rx="6" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<path d="M88 170 Q84 148 92 126" fill="none" stroke="#F09CBA" stroke-width="5" stroke-linecap="round"/>
+<path d="M88 148 Q78 140 74 126" fill="none" stroke="#F09CBA" stroke-width="4" stroke-linecap="round"/>
+<path d="M120 170 Q118 144 112 120" fill="none" stroke="#E87BA0" stroke-width="5" stroke-linecap="round"/>
+<path d="M118 146 Q130 138 136 124" fill="none" stroke="#E87BA0" stroke-width="4" stroke-linecap="round"/>
+<path d="M158 170 Q162 150 156 132" fill="none" stroke="#F4A87A" stroke-width="5" stroke-linecap="round"/>
+<circle cx="182" cy="112" r="3" fill="#4E7FA8"/>
+<circle cx="192" cy="98" r="2" fill="#4E7FA8"/>
+<circle cx="174" cy="100" r="2" fill="#4E7FA8"/>
+<rect x="58" y="186" width="164" height="52" rx="6" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<text x="68" y="202" font-size="12" fill="#C4D6E2">1 card</text>
+<text x="212" y="202" text-anchor="end" font-size="12" font-weight="500" fill="#F2F6F5">1</text>
+<text x="68" y="218" font-size="12" fill="#C4D6E2">2 cards</text>
+<text x="212" y="218" text-anchor="end" font-size="12" font-weight="500" fill="#F2F6F5">2</text>
+<text x="68" y="234" font-size="12" fill="#C4D6E2">3 cards</text>
+<text x="212" y="234" text-anchor="end" font-size="12" font-weight="500" fill="#F2F6F5">4</text>
+<circle cx="74" cy="262" r="14" fill="#EDE6D4" stroke="#C9A227" stroke-width="0.5"/>
+<text x="74" y="267" text-anchor="middle" font-size="14" font-weight="500" fill="#3B2E12">2</text>
+<text x="96" y="267" font-size="12" fill="#9DB6C4">Pearls if banked</text>
+
+<line class="leader" x1="232" y1="63" x2="266" y2="63"/>
+<text class="ts" x="272" y="67">Realm banner + name</text>
+<line class="leader" x1="232" y1="132" x2="266" y2="132"/>
+<text class="ts" x="272" y="136">Original art window</text>
+<line class="leader" x1="232" y1="212" x2="266" y2="212"/>
+<text class="ts" x="272" y="216">Rent by set size</text>
+<line class="leader" x1="232" y1="262" x2="266" y2="262"/>
+<text class="ts" x="272" y="266">Bank value badge</text>
+
+<rect x="460" y="40" width="180" height="252" rx="10" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="470" y="50" width="160" height="232" rx="7" fill="none" stroke="#1F4370" stroke-width="1"/>
+<path d="M490 92 Q510 80 530 92 T570 92 T610 92" fill="none" stroke="#1F4370" stroke-width="2"/>
+<path d="M514 184 A36 36 0 0 1 586 184 Z" fill="#2C5A8F" stroke="#7FA8E8" stroke-width="1"/>
+<line x1="550" y1="184" x2="522" y2="166" stroke="#4E7FA8" stroke-width="1"/>
+<line x1="550" y1="184" x2="534" y2="153" stroke="#4E7FA8" stroke-width="1"/>
+<line x1="550" y1="184" x2="550" y2="148" stroke="#4E7FA8" stroke-width="1"/>
+<line x1="550" y1="184" x2="566" y2="153" stroke="#4E7FA8" stroke-width="1"/>
+<line x1="550" y1="184" x2="578" y2="166" stroke="#4E7FA8" stroke-width="1"/>
+<circle cx="550" cy="200" r="12" fill="#EDE6D4"/>
+<circle cx="546" cy="196" r="3.5" fill="#FBF7EC"/>
+<text x="550" y="242" text-anchor="middle" font-size="16" font-weight="500" fill="#EDE6D4">Siren's bargain</text>
+
+<rect x="40" y="330" width="135" height="189" rx="9" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="46" y="336" width="123" height="24" rx="5" fill="#7FA8E8"/>
+<text x="107" y="353" text-anchor="middle" font-size="14" font-weight="500" fill="#12224A">Abyssal trench</text>
+<rect x="46" y="366" width="123" height="64" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<path d="M54 426 L54 392 L84 426 Z" fill="#1F4370"/>
+<path d="M162 426 L162 386 L126 426 Z" fill="#1F4370"/>
+<circle cx="105" cy="400" r="3" fill="#7FDCE8"/>
+<circle cx="95" cy="412" r="2" fill="#7FA8E8"/>
+<circle cx="118" cy="392" r="2" fill="#7FA8E8"/>
+<rect x="46" y="436" width="123" height="34" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<text x="54" y="452" font-size="12" fill="#C4D6E2">1 card</text>
+<text x="161" y="452" text-anchor="end" font-size="12" font-weight="500" fill="#F2F6F5">3</text>
+<text x="54" y="466" font-size="12" fill="#C4D6E2">2 cards</text>
+<text x="161" y="466" text-anchor="end" font-size="12" font-weight="500" fill="#F2F6F5">8</text>
+<circle cx="58" cy="490" r="11" fill="#EDE6D4" stroke="#C9A227" stroke-width="0.5"/>
+<text x="58" y="495" text-anchor="middle" font-size="13" font-weight="500" fill="#3B2E12">4</text>
+<text x="74" y="494" font-size="12" fill="#9DB6C4">to bank</text>
+
+<rect x="192" y="330" width="135" height="189" rx="9" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="198" y="336" width="123" height="24" rx="5" fill="#EDE6D4"/>
+<text x="259" y="353" text-anchor="middle" font-size="14" font-weight="500" fill="#3B2E12">Pearls</text>
+<rect x="198" y="366" width="123" height="76" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<circle cx="240" cy="395" r="13" fill="#EDE6D4"/>
+<circle cx="236" cy="391" r="3.5" fill="#FBF7EC"/>
+<circle cx="270" cy="388" r="13" fill="#EDE6D4"/>
+<circle cx="266" cy="384" r="3.5" fill="#FBF7EC"/>
+<circle cx="296" cy="400" r="11" fill="#EDE6D4"/>
+<circle cx="292" cy="396" r="3" fill="#FBF7EC"/>
+<circle cx="252" cy="420" r="12" fill="#EDE6D4"/>
+<circle cx="248" cy="416" r="3" fill="#FBF7EC"/>
+<circle cx="282" cy="418" r="11" fill="#EDE6D4"/>
+<circle cx="278" cy="414" r="3" fill="#FBF7EC"/>
+<text x="259" y="478" text-anchor="middle" font-size="26" font-weight="500" fill="#EDE6D4">5</text>
+<text x="259" y="496" text-anchor="middle" font-size="12" fill="#9DB6C4">pearls to bank</text>
+
+<rect x="344" y="330" width="135" height="189" rx="9" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="350" y="336" width="123" height="24" rx="5" fill="#EFC55E"/>
+<text x="411" y="353" text-anchor="middle" font-size="14" font-weight="500" fill="#412402">Siren's toll</text>
+<rect x="350" y="366" width="123" height="64" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<path d="M411 424 L411 384" fill="none" stroke="#EFC55E" stroke-width="3" stroke-linecap="round"/>
+<path d="M397 392 L397 376" fill="none" stroke="#EFC55E" stroke-width="3" stroke-linecap="round"/>
+<path d="M411 386 L411 372" fill="none" stroke="#EFC55E" stroke-width="3" stroke-linecap="round"/>
+<path d="M425 392 L425 376" fill="none" stroke="#EFC55E" stroke-width="3" stroke-linecap="round"/>
+<path d="M397 392 L425 392" fill="none" stroke="#EFC55E" stroke-width="3" stroke-linecap="round"/>
+<circle cx="376" cy="414" r="7" fill="#EDE6D4"/>
+<circle cx="448" cy="410" r="7" fill="#EDE6D4"/>
+<rect x="350" y="436" width="123" height="34" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<text x="411" y="452" text-anchor="middle" font-size="12" fill="#C4D6E2">Charge 1 player</text>
+<text x="411" y="466" text-anchor="middle" font-size="12" fill="#C4D6E2">rent on any realm</text>
+<circle cx="362" cy="490" r="11" fill="#EDE6D4" stroke="#C9A227" stroke-width="0.5"/>
+<text x="362" y="495" text-anchor="middle" font-size="13" font-weight="500" fill="#3B2E12">3</text>
+<text x="378" y="494" font-size="12" fill="#9DB6C4">to bank</text>
+
+<rect x="496" y="330" width="135" height="189" rx="9" fill="#0B1D33" stroke="#C9A227" stroke-width="1"/>
+<rect x="502" y="336" width="123" height="24" rx="5" fill="#A79EE8"/>
+<text x="563" y="353" text-anchor="middle" font-size="14" font-weight="500" fill="#26215C">Kraken's grasp</text>
+<rect x="502" y="366" width="123" height="64" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<ellipse cx="563" cy="390" rx="18" ry="15" fill="#A79EE8"/>
+<circle cx="557" cy="388" r="3" fill="#26215C"/>
+<circle cx="569" cy="388" r="3" fill="#26215C"/>
+<path d="M550 402 Q536 416 520 410" fill="none" stroke="#A79EE8" stroke-width="4" stroke-linecap="round"/>
+<path d="M563 404 Q563 422 550 426" fill="none" stroke="#A79EE8" stroke-width="4" stroke-linecap="round"/>
+<path d="M576 402 Q590 416 606 408" fill="none" stroke="#A79EE8" stroke-width="4" stroke-linecap="round"/>
+<rect x="502" y="436" width="123" height="34" rx="5" fill="#14304F" stroke="#22496F" stroke-width="0.5"/>
+<text x="563" y="452" text-anchor="middle" font-size="12" fill="#C4D6E2">Steal a completed</text>
+<text x="563" y="466" text-anchor="middle" font-size="12" fill="#C4D6E2">realm set</text>
+<circle cx="514" cy="490" r="11" fill="#EDE6D4" stroke="#C9A227" stroke-width="0.5"/>
+<text x="514" y="495" text-anchor="middle" font-size="13" font-weight="500" fill="#3B2E12">5</text>
+<text x="530" y="494" font-size="12" fill="#9DB6C4">to bank</text>
+
+<rect x="40" y="550" width="100" height="26" rx="5" fill="#E0C18A"/>
+<text x="90" y="567" text-anchor="middle" font-size="11" fill="#4A3413">#E0C18A</text>
+<text class="ts" x="90" y="592" text-anchor="middle">Tide pools</text>
+<rect x="160" y="550" width="100" height="26" rx="5" fill="#7FC9B4"/>
+<text x="210" y="567" text-anchor="middle" font-size="11" fill="#0B3A2E">#7FC9B4</text>
+<text class="ts" x="210" y="592" text-anchor="middle">Kelp forest</text>
+<rect x="280" y="550" width="100" height="26" rx="5" fill="#F09CBA"/>
+<text x="330" y="567" text-anchor="middle" font-size="11" fill="#4B1528">#F09CBA</text>
+<text class="ts" x="330" y="592" text-anchor="middle">Coral gardens</text>
+<rect x="400" y="550" width="100" height="26" rx="5" fill="#F4A87A"/>
+<text x="450" y="567" text-anchor="middle" font-size="11" fill="#4A1B0C">#F4A87A</text>
+<text class="ts" x="450" y="592" text-anchor="middle">Pearl beds</text>
+<rect x="520" y="550" width="100" height="26" rx="5" fill="#E08585"/>
+<text x="570" y="567" text-anchor="middle" font-size="11" fill="#501313">#E08585</text>
+<text class="ts" x="570" y="592" text-anchor="middle">Shipwreck cove</text>
+
+<rect x="40" y="612" width="100" height="26" rx="5" fill="#EFC55E"/>
+<text x="90" y="629" text-anchor="middle" font-size="11" fill="#412402">#EFC55E</text>
+<text class="ts" x="90" y="654" text-anchor="middle">Sunken temple</text>
+<rect x="160" y="612" width="100" height="26" rx="5" fill="#9AD16C"/>
+<text x="210" y="629" text-anchor="middle" font-size="11" fill="#173404">#9AD16C</text>
+<text class="ts" x="210" y="654" text-anchor="middle">Seagrass lagoon</text>
+<rect x="280" y="612" width="100" height="26" rx="5" fill="#7FA8E8"/>
+<text x="330" y="629" text-anchor="middle" font-size="11" fill="#12224A">#7FA8E8</text>
+<text class="ts" x="330" y="654" text-anchor="middle">Abyssal trench</text>
+<rect x="400" y="612" width="100" height="26" rx="5" fill="#BCC9D2"/>
+<text x="450" y="629" text-anchor="middle" font-size="11" fill="#2A3944">#BCC9D2</text>
+<text class="ts" x="450" y="654" text-anchor="middle">Ocean currents</text>
+<rect x="520" y="612" width="100" height="26" rx="5" fill="#7FDCE8"/>
+<text x="570" y="629" text-anchor="middle" font-size="11" fill="#06363D">#7FDCE8</text>
+<text class="ts" x="570" y="654" text-anchor="middle">Mystic springs</text>
+</svg>

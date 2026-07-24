@@ -6,11 +6,32 @@ const HAND_LIMIT := 7
 const NORMAL_DRAW := 2
 const EMPTY_HAND_DRAW := 5
 
+# Fired after any successful play or refusable-action initiation. `text` uses
+# "P%d" tokens for player references (e.g. "took Anemone Grove from P0 with
+# Slippery Eel"); UI is expected to substitute names for display.
+signal play_logged(actor_id: int, text: String)
+
 var game_state: GameState
 var plays_this_turn: int = 0
 
 func _init(gs: GameState) -> void:
 	game_state = gs
+	# Empty-hand refill fires the moment any player empties their hand — via
+	# playing, refusing, banking or attaching a modifier — regardless of
+	# whose turn it is. Draws EMPTY_HAND_DRAW; may reshuffle discard.
+	for p in game_state.players:
+		p.hand_emptied.connect(_on_player_hand_emptied.bind(p))
+
+func _on_player_hand_emptied(player: PlayerState) -> void:
+	var drawn := 0
+	for i in range(EMPTY_HAND_DRAW):
+		var c := game_state.draw_card()
+		if c == null:
+			break
+		player.hand.append(c)
+		drawn += 1
+	if drawn > 0:
+		play_logged.emit(player.id, "drew %d (empty hand)" % drawn)
 
 func start_turn() -> void:
 	plays_this_turn = 0
@@ -35,6 +56,7 @@ func bank_card(card: CardData) -> bool:
 		return false
 	player.bank_card(card)
 	plays_this_turn += 1
+	play_logged.emit(player.id, "banked %s (%d ◈)" % [card.name, card.value])
 	return true
 
 func play_realm(card: CardData, target_realm: String) -> bool:
@@ -49,6 +71,7 @@ func play_realm(card: CardData, target_realm: String) -> bool:
 		return false
 	player.play_realm(card, target_realm)
 	plays_this_turn += 1
+	play_logged.emit(player.id, "laid %s in %s" % [card.name, target_realm])
 	return true
 
 func play_coral_cottage(card: CardData, target_realm: String) -> bool:
@@ -65,6 +88,7 @@ func play_coral_cottage(card: CardData, target_realm: String) -> bool:
 		return false
 	player.attach_modifier(card, target_realm)
 	plays_this_turn += 1
+	play_logged.emit(player.id, "attached Coral Cottage to %s" % target_realm)
 	return true
 
 func play_pearl_palace(card: CardData, target_realm: String) -> bool:
@@ -83,6 +107,7 @@ func play_pearl_palace(card: CardData, target_realm: String) -> bool:
 		return false
 	player.attach_modifier(card, target_realm)
 	plays_this_turn += 1
+	play_logged.emit(player.id, "attached Pearl Palace to %s" % target_realm)
 	return true
 
 # --- Refusable actions ---------------------------------------------------
@@ -119,7 +144,7 @@ func initiate_slippery_eel(
 		return null
 	if not ActionResolver.can_slippery_eel(game_state, target_id, stolen_card, dest_realm):
 		return null
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
 	var pending := PendingAction.new(
@@ -127,6 +152,7 @@ func initiate_slippery_eel(
 		{ "stolen_card": stolen_card, "dest_realm": dest_realm },
 	)
 	game_state.pending_action = pending
+	play_logged.emit(player.id, "took %s from P%d with Slippery Eel" % [stolen_card.name, target_id])
 	return pending
 
 func play_slippery_eel(
@@ -159,7 +185,7 @@ func initiate_trade_winds(
 		own_card, their_dest_realm, their_card, own_dest_realm,
 	):
 		return null
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
 	var pending := PendingAction.new(
@@ -172,6 +198,8 @@ func initiate_trade_winds(
 		},
 	)
 	game_state.pending_action = pending
+	play_logged.emit(player.id,
+		"traded %s for %s with P%d (Trade Winds)" % [own_card.name, their_card.name, target_id])
 	return pending
 
 func play_trade_winds(
@@ -203,7 +231,7 @@ func initiate_krakens_grasp(
 		return null
 	if not ActionResolver.can_krakens_grasp(game_state, target_id, realm_name):
 		return null
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
 	var pending := PendingAction.new(
@@ -211,6 +239,7 @@ func initiate_krakens_grasp(
 		{ "realm_name": realm_name },
 	)
 	game_state.pending_action = pending
+	play_logged.emit(player.id, "took %s from P%d with Kraken's Grasp" % [realm_name, target_id])
 	return pending
 
 func play_krakens_grasp(card: CardData, target_id: int, realm_name: String) -> bool:
@@ -231,7 +260,7 @@ func initiate_toll_of_the_tides(card: CardData, target_id: int) -> PendingAction
 		return null
 	if ActionResolver._player_by_id(game_state, target_id) == null:
 		return null
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
 	var pending := PendingAction.new(
@@ -239,6 +268,9 @@ func initiate_toll_of_the_tides(card: CardData, target_id: int) -> PendingAction
 		{ "per_target": ActionResolver.TOLL_OF_THE_TIDES_AMOUNT },
 	)
 	game_state.pending_action = pending
+	play_logged.emit(player.id,
+		"took Toll of the Tides from P%d — %d ◈ owed" %
+		[target_id, ActionResolver.TOLL_OF_THE_TIDES_AMOUNT])
 	return pending
 
 func play_toll_of_the_tides(card: CardData, target_id: int) -> Dictionary:
@@ -261,7 +293,7 @@ func initiate_mermaids_feast(card: CardData) -> PendingAction:
 	for p in game_state.players:
 		if p.id != player.id:
 			targets.append(p.id)
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	game_state.discard_pile.append(card)
 	plays_this_turn += 1
 	var pending := PendingAction.new(
@@ -269,6 +301,8 @@ func initiate_mermaids_feast(card: CardData) -> PendingAction:
 		{ "per_target": ActionResolver.MERMAIDS_FEAST_AMOUNT },
 	)
 	game_state.pending_action = pending
+	play_logged.emit(player.id,
+		"served Mermaid's Feast — everyone owes %d ◈" % ActionResolver.MERMAIDS_FEAST_AMOUNT)
 	return pending
 
 func play_mermaids_feast(card: CardData) -> Dictionary:
@@ -325,10 +359,10 @@ func initiate_tribute(
 
 	var per_payer := RentCalculator.rent(charger, charger_realm, high_tide_card != null)
 
-	charger.hand.erase(tribute_card)
+	charger.remove_from_hand(tribute_card)
 	game_state.discard_pile.append(tribute_card)
 	if high_tide_card != null:
-		charger.hand.erase(high_tide_card)
+		charger.remove_from_hand(high_tide_card)
 		game_state.discard_pile.append(high_tide_card)
 	plays_this_turn += plays_needed
 
@@ -338,6 +372,15 @@ func initiate_tribute(
 		{ "per_target": per_payer, "charger_realm": charger_realm },
 	)
 	game_state.pending_action = pending
+	var ht_note := " with High Tide" if high_tide_card != null else ""
+	if is_sirens_toll:
+		play_logged.emit(charger.id,
+			"charged Siren's Toll from P%d on %s%s — %d ◈ owed" %
+			[payers[0], charger_realm, ht_note, per_payer])
+	else:
+		play_logged.emit(charger.id,
+			"charged Tribute on %s%s — %d ◈ per opponent" %
+			[charger_realm, ht_note, per_payer])
 	return pending
 
 func charge_tribute(
@@ -373,7 +416,7 @@ func refuse(target_id: int, refuser_id: int, refusal_card: CardData) -> bool:
 		return false
 	if refusal_card.action_effect != "sirens_refusal":
 		return false
-	refuser.hand.erase(refusal_card)
+	refuser.remove_from_hand(refusal_card)
 	game_state.discard_pile.append(refusal_card)
 	pending.push_refusal(target_id, refusal_card)
 	return true
@@ -446,10 +489,11 @@ func play_ride_the_current(card: CardData) -> bool:
 	# out mid-effect, but delay putting it into the discard pile until AFTER
 	# the resolver has drawn — otherwise a reshuffle would pull the same Ride
 	# card straight back into the player's hand.
-	player.hand.erase(card)
+	player.remove_from_hand(card)
 	plays_this_turn += 1
 	ActionResolver.ride_the_current(game_state)
 	game_state.discard_pile.append(card)
+	play_logged.emit(player.id, "drew 2 (Ride the Current)")
 	return true
 
 func end_turn(discards: Array[CardData] = []) -> void:

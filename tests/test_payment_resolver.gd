@@ -60,7 +60,12 @@ func test_paying_with_realm_cards() -> void:
 	)
 	assert_eq(moved, 4)
 	assert_eq((payer.realms["Coral Gardens"] as Array).size(), 0)
-	assert_eq(receiver.bank.size(), 2, "Paid realm cards land in receiver's bank")
+	# Realm cards paid to the receiver are laid onto their board (auto-routed
+	# to Coral Gardens, since that's the plain realm's only legal home). They
+	# do NOT enter the receiver's bank — that used to be a one-way leak.
+	assert_eq(receiver.bank.size(), 0, "Paid realm cards should not enter bank")
+	assert_eq((receiver.realms["Coral Gardens"] as Array).size(), 2,
+		"Paid realm cards land on receiver's board")
 
 func test_paying_from_bank_and_realms_mixed() -> void:
 	var payer := PlayerState.new(0)
@@ -77,7 +82,10 @@ func test_paying_from_bank_and_realms_mixed() -> void:
 	assert_eq(moved, 4)
 	assert_eq(payer.bank.size(), 0)
 	assert_eq((payer.realms["Sunken Temple"] as Array).size(), 0)
-	assert_eq(receiver.total_bank_value(), 4)
+	# The 1-pearl banked coin lands in the bank; the Sunken Temple realm
+	# card is auto-laid on the receiver's board.
+	assert_eq(receiver.total_bank_value(), 1)
+	assert_eq((receiver.realms["Sunken Temple"] as Array).size(), 1)
 
 # ---- Underpayment (no change given) ----
 

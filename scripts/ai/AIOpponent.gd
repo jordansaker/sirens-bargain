@@ -42,6 +42,22 @@ func take_turn(tm: TurnManager, all_ais: Dictionary) -> void:
 			return
 	_end_turn_with_discards(tm)
 
+# --- Public per-step API for external drivers ---------------------------
+#
+# When the UI wants to interleave AI plays with visual updates (refresh the
+# hand, delay a few hundred ms between plays so the player can follow along),
+# it calls these three in place of take_turn(). Headless tests keep using
+# take_turn() — same underlying logic, no per-step overhead.
+
+func begin_turn(tm: TurnManager) -> void:
+	tm.start_turn()
+
+func try_one_play(tm: TurnManager, all_ais: Dictionary) -> bool:
+	return _make_one_play(tm, all_ais)
+
+func finish_turn(tm: TurnManager) -> void:
+	_end_turn_with_discards(tm)
+
 func _end_turn_with_discards(tm: TurnManager) -> void:
 	var player := tm.game_state.players[player_id]
 	var over := player.hand.size() - TurnManager.HAND_LIMIT

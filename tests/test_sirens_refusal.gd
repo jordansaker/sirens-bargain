@@ -116,6 +116,11 @@ func test_refusal_cancels_slippery_eel() -> void:
 	var target := gs.players[1]
 	_stock_realm(target, "Kelp Forest", 2)
 	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	# Filler cards so neither hand goes empty when the eel/refusal is spent —
+	# an empty hand would trigger the auto-refill, which reshuffles the
+	# discard back into the draw pile and pulls the just-played eel out.
+	thief.hand.append(_pearl("thief_filler", 1))
+	target.hand.append(_pearl("target_filler", 1))
 	var eel := _eel()
 	thief.hand.append(eel)
 	var refusal := _refusal()
@@ -145,6 +150,9 @@ func test_refusal_counter_refusal_allows_effect_through() -> void:
 	var target := gs.players[1]
 	_stock_realm(target, "Kelp Forest", 2)
 	var stolen: CardData = (target.realms["Kelp Forest"] as Array)[0]
+	# Filler so no side goes empty — see rationale in the sibling test above.
+	thief.hand.append(_pearl("thief_filler", 1))
+	target.hand.append(_pearl("target_filler", 1))
 	var eel := _eel()
 	thief.hand.append(eel)
 	var target_ref := _refusal("target_ref")
