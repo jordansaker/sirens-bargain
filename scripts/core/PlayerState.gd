@@ -5,6 +5,7 @@ var id: int = 0
 var hand: Array[CardData] = []
 var bank: Array[CardData] = []
 var realms: Dictionary = {}
+var realm_modifiers: Dictionary = {}
 
 func _init(player_id: int = 0) -> void:
 	id = player_id
@@ -63,3 +64,69 @@ func completed_realm_count() -> int:
 		if is_realm_complete(r):
 			count += 1
 	return count
+
+func modifiers_on(realm: String) -> Array[CardData]:
+	var mods: Array[CardData] = realm_modifiers.get(realm, [] as Array[CardData])
+	return mods
+
+func has_cottage(realm: String) -> bool:
+	for m in modifiers_on(realm):
+		if m.action_effect == "coral_cottage":
+			return true
+	return false
+
+func has_palace(realm: String) -> bool:
+	for m in modifiers_on(realm):
+		if m.action_effect == "pearl_palace":
+			return true
+	return false
+
+func attach_modifier(card: CardData, realm: String) -> void:
+	assert(hand.has(card), "Modifier not in hand")
+	assert(card.type == CardData.Type.ACTION,
+		"Only action cards attach as modifiers")
+	assert(card.action_effect == "coral_cottage" or card.action_effect == "pearl_palace",
+		"Only Coral Cottage and Pearl Palace attach to realms")
+	assert(is_realm_complete(realm),
+		"Modifiers only attach to completed realms")
+	if card.action_effect == "coral_cottage":
+		assert(not has_cottage(realm),
+			"%s already has a Coral Cottage" % realm)
+	elif card.action_effect == "pearl_palace":
+		assert(has_cottage(realm),
+			"Pearl Palace requires a Coral Cottage on %s" % realm)
+		assert(not has_palace(realm),
+			"%s already has a Pearl Palace" % realm)
+	hand.erase(card)
+	var mods: Array[CardData] = modifiers_on(realm)
+	mods.append(card)
+	realm_modifiers[realm] = mods
+
+func receive_payment(cards: Array[CardData]) -> void:
+	for c in cards:
+		bank.append(c)
+
+func pay_cards(from_bank: Array[CardData], from_realms: Array[CardData]) -> void:
+	for c in from_bank:
+		assert(bank.has(c), "Card %s not in bank" % c.id)
+	for c in from_realms:
+		var found_in := ""
+		for r in realms.keys():
+			var stack: Array = realms[r]
+			if stack.has(c):
+				found_in = r
+				break
+		assert(found_in != "", "Card %s not laid in any realm" % c.id)
+	for c in from_bank:
+		bank.erase(c)
+	for c in from_realms:
+		for r in realms.keys():
+			var stack: Array[CardData] = realms[r]
+			if stack.has(c):
+				stack.erase(c)
+				realms[r] = stack
+				# If the realm just lost its last card, drop its modifiers too
+				# so a future re-complete doesn't inherit stale houses.
+				if stack.is_empty() and realm_modifiers.has(r):
+					realm_modifiers.erase(r)
+				break
