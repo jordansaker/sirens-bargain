@@ -315,16 +315,15 @@ func play_mermaids_feast(card: CardData) -> Dictionary:
 
 # Tributes — standard (charges every opponent on a matching realm) or
 # Siren's Toll (charges one chosen opponent on any realm the charger owns).
-# High Tide is optional and consumes an extra play; it doubles the per-payer
-# amount for every non-cancelled target.
+# High Tide is optional and free (doesn't consume a play); it doubles the
+# per-payer amount for every non-cancelled target.
 func initiate_tribute(
 	tribute_card: CardData,
 	charger_realm: String,
 	target_player: int = -1,
 	high_tide_card: CardData = null,
 ) -> PendingAction:
-	var plays_needed: int = 2 if high_tide_card != null else 1
-	if plays_this_turn + plays_needed > MAX_PLAYS:
+	if plays_this_turn + 1 > MAX_PLAYS:
 		return null
 	var charger := game_state.current_player()
 	if not charger.hand.has(tribute_card):
@@ -364,7 +363,7 @@ func initiate_tribute(
 	if high_tide_card != null:
 		charger.remove_from_hand(high_tide_card)
 		game_state.discard_pile.append(high_tide_card)
-	plays_this_turn += plays_needed
+	plays_this_turn += 1
 
 	var kind := "sirens_toll" if is_sirens_toll else "tribute"
 	var pending := PendingAction.new(

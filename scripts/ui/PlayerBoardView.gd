@@ -8,7 +8,7 @@ extends VBoxContainer
 
 signal realm_chip_pressed(player_id: int, realm_name: String)
 
-const CHIP_ROW_HEIGHT := 44
+const CHIP_ROW_HEIGHT := 68
 const CHIP_ROW_MAX := 5   # shown side-by-side; more scroll horizontally
 
 var player: PlayerState

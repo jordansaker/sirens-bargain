@@ -26,6 +26,13 @@ const HIGH_TIDE_BANK_VALUE := 1
 
 var player_id: int
 
+# Optional coroutine invoked when a refusable action is initiated against a
+# player that has no AI in the `all_ais` dict (i.e. the human). Signature is
+# `(target_id: int, pending: PendingAction) -> bool`. Return true to refuse.
+# Left unset in headless AI-vs-AI matches — the human branch short-circuits
+# and no await ever fires.
+var human_refusal_hook: Callable
+
 func _init(pid: int) -> void:
 	player_id = pid
 
@@ -34,9 +41,12 @@ func _init(pid: int) -> void:
 func take_turn(tm: TurnManager, all_ais: Dictionary) -> void:
 	tm.start_turn()
 	# Play loop. Each iteration attempts one play; if we can't find anything
-	# to do, break so we don't spin forever.
+	# to do, break so we don't spin forever. `_make_one_play` is a coroutine
+	# because refusable actions may await a human hook; in AI-vs-AI matches
+	# the hook is unset so every await resolves immediately and this runs
+	# fully synchronously.
 	while tm.can_play():
-		if not _make_one_play(tm, all_ais):
+		if not await _make_one_play(tm, all_ais):
 			break
 		if tm.game_state.is_game_over():
 			return
@@ -53,7 +63,7 @@ func begin_turn(tm: TurnManager) -> void:
 	tm.start_turn()
 
 func try_one_play(tm: TurnManager, all_ais: Dictionary) -> bool:
-	return _make_one_play(tm, all_ais)
+	return await _make_one_play(tm, all_ais)
 
 func finish_turn(tm: TurnManager) -> void:
 	_end_turn_with_discards(tm)
@@ -111,21 +121,24 @@ func _make_one_play(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var gs := tm.game_state
 	var player := gs.players[player_id]
 
+	# Non-refusable attempts are sync. The refusable ones (kraken/tribute/
+	# eel/toll/feast) await the refusal window — safe to await sync-returning
+	# ones too since `await value` just returns the value.
 	if _try_complete_set(tm, player):
 		return true
-	if _try_kraken(tm, all_ais):
+	if await _try_kraken(tm, all_ais):
 		return true
-	if _try_tribute(tm, all_ais):
+	if await _try_tribute(tm, all_ais):
 		return true
 	if _try_progress_realm(tm, player):
 		return true
 	if _try_attach_modifier(tm, player):
 		return true
-	if _try_slippery_eel(tm, all_ais):
+	if await _try_slippery_eel(tm, all_ais):
 		return true
-	if _try_toll(tm, all_ais):
+	if await _try_toll(tm, all_ais):
 		return true
-	if _try_feast(tm, all_ais):
+	if await _try_feast(tm, all_ais):
 		return true
 	if _try_ride(tm, player):
 		return true
@@ -247,29 +260,29 @@ func _try_tribute(tm: TurnManager, all_ais: Dictionary) -> bool:
 		return av > bv
 	)
 	var pick: Dictionary = options[0]
-	# High Tide: worthwhile when the extra rent beats the card's bank value AND
-	# the doubled amount is still payable from bank.
+	# High Tide: free rider on the tribute — no extra play cost — so add it
+	# whenever the extra rent beats banking the card and the doubled amount
+	# is still payable from bank.
 	var ht_card: CardData = null
-	if tm.plays_this_turn + 2 <= TurnManager.MAX_PLAYS:
-		var doubled: int = int(pick["rent"]) * 2
-		var payable_when_doubled := true
-		if pick["kind"] == "standard":
-			payable_when_doubled = _all_opponents_can_pay(gs, doubled)
-		else:
-			var t: PlayerState = gs.players[int(pick["target"])]
-			payable_when_doubled = t.total_bank_value() >= doubled
-		if payable_when_doubled:
-			var payers: int = pick.get("payer_count", 1)
-			var extra: int = int(pick["rent"]) * payers
-			if extra > HIGH_TIDE_BANK_VALUE:
-				ht_card = _find_action(charger, "high_tide")
+	var doubled: int = int(pick["rent"]) * 2
+	var payable_when_doubled := true
+	if pick["kind"] == "standard":
+		payable_when_doubled = _all_opponents_can_pay(gs, doubled)
+	else:
+		var t: PlayerState = gs.players[int(pick["target"])]
+		payable_when_doubled = t.total_bank_value() >= doubled
+	if payable_when_doubled:
+		var payers: int = pick.get("payer_count", 1)
+		var extra: int = int(pick["rent"]) * payers
+		if extra > HIGH_TIDE_BANK_VALUE:
+			ht_card = _find_action(charger, "high_tide")
 	var target_id: int = -1
 	if pick["kind"] == "toll":
 		target_id = pick["target"]
 	var pending := tm.initiate_tribute(pick["card"], pick["realm"], target_id, ht_card)
 	if pending == null:
 		return false
-	_run_refusal_window(tm, all_ais)
+	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
 		_settle_owed(gs, owed)
@@ -322,7 +335,7 @@ func _try_kraken(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var pending := tm.initiate_krakens_grasp(kraken, best_target, best_realm)
 	if pending == null:
 		return false
-	_run_refusal_window(tm, all_ais)
+	await _run_refusal_window(tm, all_ais)
 	tm.resolve_pending()
 	return true
 
@@ -365,7 +378,7 @@ func _try_slippery_eel(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var pending := tm.initiate_slippery_eel(eel, leader, best_card, best_dest)
 	if pending == null:
 		return false
-	_run_refusal_window(tm, all_ais)
+	await _run_refusal_window(tm, all_ais)
 	tm.resolve_pending()
 	return true
 
@@ -383,7 +396,7 @@ func _try_toll(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var pending := tm.initiate_toll_of_the_tides(toll, target)
 	if pending == null:
 		return false
-	_run_refusal_window(tm, all_ais)
+	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
 		_settle_owed(gs, owed)
@@ -400,7 +413,7 @@ func _try_feast(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var pending := tm.initiate_mermaids_feast(feast)
 	if pending == null:
 		return false
-	_run_refusal_window(tm, all_ais)
+	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
 		_settle_owed(gs, owed)
@@ -434,17 +447,22 @@ func _run_refusal_window(tm: TurnManager, all_ais: Dictionary) -> void:
 	# Iterate targets in a stable order.
 	var targets: Array[int] = pending.targets.duplicate()
 	for target_id in targets:
-		var target_ai_var: Variant = all_ais.get(target_id)
-		if target_ai_var == null:
-			continue
-		var target_ai: AIOpponent = target_ai_var
 		var target: PlayerState = tm.game_state.players[target_id]
 		var target_ref := _find_action(target, "sirens_refusal")
 		if target_ref == null:
 			continue
-		if not target_ai._wants_to_refuse(tm.game_state, pending, target_id):
-			continue
-		tm.refuse(target_id, target_id, target_ref)
+		var wants_refuse := false
+		var target_ai_var: Variant = all_ais.get(target_id)
+		if target_ai_var != null:
+			var target_ai: AIOpponent = target_ai_var
+			wants_refuse = target_ai._wants_to_refuse(tm.game_state, pending, target_id)
+		elif human_refusal_hook.is_valid():
+			# Human target — prompt via the coroutine hook. In headless AI-vs-AI
+			# matches this branch never runs (hook is unset), so `_run_refusal_window`
+			# still finishes without ever pausing.
+			wants_refuse = await human_refusal_hook.call(target_id, pending)
+		if wants_refuse:
+			tm.refuse(target_id, target_id, target_ref)
 		# Greedy AI does not counter-refuse — keeps Refusals for its own defense.
 
 func _wants_to_refuse(gs: GameState, pending: PendingAction, target_id: int) -> bool:

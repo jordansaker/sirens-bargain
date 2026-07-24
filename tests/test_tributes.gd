@@ -1,5 +1,13 @@
 extends GutTest
 
+func _pearl(id: String, value: int = 1) -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "%d Pearl" % value
+	c.type = CardData.Type.PEARL
+	c.value = value
+	return c
+
 func _realm(id: String, realm: String, value: int = 2) -> CardData:
 	var c := CardData.new()
 	c.id = id
@@ -141,7 +149,7 @@ func test_sirens_toll_cannot_target_charger() -> void:
 
 # ---- High Tide ----
 
-func test_high_tide_doubles_rent_and_consumes_two_plays() -> void:
+func test_high_tide_doubles_rent_and_is_free() -> void:
 	var gs := _game(2)
 	var tm := TurnManager.new(gs)
 	var charger := gs.current_player()
@@ -151,23 +159,29 @@ func test_high_tide_doubles_rent_and_consumes_two_plays() -> void:
 	charger.hand.append_array([trib, ht])
 	var owed := tm.charge_tribute(trib, "Sunken Temple", -1, ht)
 	assert_eq(int(owed[1]), 12)
-	assert_eq(tm.plays_this_turn, 2, "High Tide consumes an extra play")
+	# High Tide rides along with the tribute — only the tribute burns a play.
+	assert_eq(tm.plays_this_turn, 1, "High Tide is a free rider on the tribute")
 	assert_true(gs.discard_pile.has(ht), "High Tide goes to discard")
 
-func test_high_tide_rejected_when_only_one_play_left() -> void:
+func test_high_tide_works_on_final_play() -> void:
 	var gs := _game(2)
 	var tm := TurnManager.new(gs)
 	var charger := gs.current_player()
 	_stock_realm(charger, "Sunken Temple", 3)
-	# Burn 2 plays first
+	# Burn 2 plays first — one play left, and that's all a High-Tide-boosted
+	# tribute needs (the tribute itself; High Tide is free).
 	tm.plays_this_turn = 2
 	var trib := _tribute("t1", ["Shipwreck Cove", "Sunken Temple"] as Array[String])
 	var ht := _high_tide()
+	# Filler so removing both cards doesn't empty the hand and trigger the
+	# reshuffle-and-refill that would pull them back out of the discard pile.
+	charger.hand.append(_pearl("filler", 1))
 	charger.hand.append_array([trib, ht])
 	var owed := tm.charge_tribute(trib, "Sunken Temple", -1, ht)
-	assert_true(owed.is_empty(), "Not enough plays for tribute + High Tide")
-	assert_true(charger.hand.has(trib))
-	assert_true(charger.hand.has(ht))
+	assert_eq(int(owed[1]), 12, "Doubled rent on the final play")
+	assert_eq(tm.plays_this_turn, 3)
+	assert_false(charger.hand.has(trib))
+	assert_false(charger.hand.has(ht))
 
 # ---- Cottage / Palace via TurnManager ----
 

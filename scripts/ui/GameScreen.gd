@@ -49,6 +49,22 @@ const HUMAN_NAME := "You"
 @onready var _prompt_label: Label = %PromptLabel
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
+@onready var _turn_banner: Label = %TurnBanner
+@onready var _game_over_scrim: ColorRect = %GameOverScrim
+@onready var _game_over_panel: Panel = %GameOverPanel
+@onready var _game_over_title: Label = %GameOverTitle
+@onready var _game_over_subtitle: Label = %GameOverSubtitle
+@onready var _game_over_stats: VBoxContainer = %GameOverStats
+@onready var _play_again_button: Button = %PlayAgainButton
+@onready var _main_menu_button: Button = %MainMenuButton
+@onready var _refusal_scrim: ColorRect = %RefusalScrim
+@onready var _refusal_panel: Panel = %RefusalPanel
+@onready var _refusal_title: Label = %RefusalTitle
+@onready var _refusal_body: Label = %RefusalBody
+@onready var _refuse_button: Button = %RefuseButton
+@onready var _accept_button: Button = %AcceptButton
+
+signal _refusal_answered(refuse: bool)
 @onready var _opponent_board: PlayerBoardView = %OpponentBoard
 @onready var _player_board: PlayerBoardView = %PlayerBoard
 @onready var _hand_row: HBoxContainer = %HandRow
@@ -83,6 +99,7 @@ var _card_peek_card: CardData = null
 var _gs: GameState
 var _tm: TurnManager
 var _ais: Dictionary = {}     # id -> AIOpponent (opponents only)
+var _sfx: SoundEffects = null
 
 var _state: int = InteractionState.IDLE
 var _selected_card: CardData = null
@@ -92,12 +109,19 @@ var _pending_discards: Array[CardData] = []
 func _ready() -> void:
 	_setup_game()
 	_configure_boards()
+	_setup_sound()
 	_wire_signals()
 	_style_card_peek()
 	_hide_menu()
 	_hide_peek()
 	_hide_card_peek()
+	_hide_game_over()
+	_hide_refusal_modal()
 	_start_human_turn()
+
+func _setup_sound() -> void:
+	_sfx = SoundEffects.new()
+	add_child(_sfx)
 
 # --- Game setup ----------------------------------------------------------
 
@@ -142,6 +166,15 @@ func _wire_signals() -> void:
 	_player_board.realm_chip_pressed.connect(_on_own_chip_pressed)
 	# Play-by-play log fed by TurnManager. Fires for both human and AI plays.
 	_tm.play_logged.connect(_on_play_logged)
+	_play_again_button.pressed.connect(_on_play_again_pressed)
+	_main_menu_button.pressed.connect(_on_main_menu_pressed)
+	_refuse_button.pressed.connect(func(): _refusal_answered.emit(true))
+	_accept_button.pressed.connect(func(): _refusal_answered.emit(false))
+	# Give the AI a coroutine to await when it initiates something at the
+	# human — modal → user picks Refuse / Accept → resolve.
+	for id in _ais.keys():
+		var ai: AIOpponent = _ais[id]
+		ai.human_refusal_hook = _prompt_human_refusal
 
 # --- Turn loop -----------------------------------------------------------
 
@@ -151,6 +184,7 @@ func _start_human_turn() -> void:
 	_ctx.clear()
 	_tm.start_turn()
 	_refresh_all()
+	_flash_turn_banner("Your turn")
 	_prompt("Tap a card in your hand.")
 
 func _end_human_turn() -> void:
@@ -185,6 +219,7 @@ func _run_ai_turns() -> void:
 		if ai_var == null:
 			break
 		var ai: AIOpponent = ai_var
+		_flash_turn_banner("%s's turn" % OPPONENT_NAME)
 		_prompt("%s is thinking…" % OPPONENT_NAME)
 		# Drive the AI one play at a time so the player sees each move and
 		# each log entry lands as it happens — rather than watching the
@@ -193,7 +228,9 @@ func _run_ai_turns() -> void:
 		_refresh_all()
 		await get_tree().create_timer(AI_PLAY_DELAY * 0.5).timeout
 		while _tm.can_play() and not _gs.is_game_over():
-			var made := ai.try_one_play(_tm, _ais)
+			# try_one_play is a coroutine — a refusable action may await the
+			# human refusal modal. We must await so the AI doesn't race ahead.
+			var made: bool = await ai.try_one_play(_tm, _ais)
 			_refresh_all()
 			if not made:
 				break
@@ -210,10 +247,141 @@ func _run_ai_turns() -> void:
 
 func _show_game_over() -> void:
 	_state = InteractionState.GAME_OVER
-	var winner := _gs.winner()
-	var msg := "You win!" if winner == HUMAN_ID else "%s wins." % OPPONENT_NAME
-	_prompt(msg)
+	var winner_id := _gs.winner()
+	var winner_is_you := winner_id == HUMAN_ID
+	_game_over_title.text = "You win!" if winner_is_you else "%s wins" % OPPONENT_NAME
+	_game_over_subtitle.text = "First to %d completed realms." % _gs.sets_to_win()
+	# Populate per-player stat rows so the player can see the final board.
+	for child in _game_over_stats.get_children():
+		child.queue_free()
+	for p in _gs.players:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		var name_lbl := Label.new()
+		name_lbl.text = HUMAN_NAME if p.id == HUMAN_ID else OPPONENT_NAME
+		name_lbl.add_theme_font_size_override("font_size", 13)
+		name_lbl.add_theme_color_override("font_color", CardColors.PEARL if p.id == winner_id else CardColors.MIST)
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(name_lbl)
+		var stats_lbl := Label.new()
+		stats_lbl.text = "%d sets · %d ◈" % [p.completed_realm_count(), p.total_bank_value()]
+		stats_lbl.add_theme_font_size_override("font_size", 13)
+		stats_lbl.add_theme_color_override("font_color", CardColors.MIST)
+		row.add_child(stats_lbl)
+		_game_over_stats.add_child(row)
+	_game_over_scrim.visible = true
+	_game_over_panel.visible = true
+	_prompt("Game over.")
 	_refresh_all()
+	if _sfx != null:
+		_sfx.play("game_over")
+
+func _hide_game_over() -> void:
+	if _game_over_panel != null:
+		_game_over_panel.visible = false
+	if _game_over_scrim != null:
+		_game_over_scrim.visible = false
+
+func _on_play_again_pressed() -> void:
+	# Reload the GameScreen scene — cleanest way to reset all state including
+	# the RNG-driven initial deal.
+	get_tree().change_scene_to_file("res://scenes/GameScreen.tscn")
+
+func _on_main_menu_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+# --- Human refusal window (hooked by AIOpponent) -------------------------
+
+# Refusal window opened by GameScreen when the HUMAN initiates a refusable
+# action. Asks each target (AI or human) whether to refuse; consumes their
+# Siren's Refusal card if they do. Mirrors AIOpponent._run_refusal_window so
+# defenders get the same fair shot regardless of who attacked.
+func _open_refusal_window() -> void:
+	var pending: PendingAction = _gs.pending_action
+	if pending == null:
+		return
+	for target_id in pending.targets.duplicate():
+		var target: PlayerState = _gs.players[target_id]
+		var refusal: CardData = null
+		for c in target.hand:
+			if c.action_effect == "sirens_refusal":
+				refusal = c
+				break
+		if refusal == null:
+			continue
+		var wants_refuse := false
+		if _ais.has(target_id):
+			var ai: AIOpponent = _ais[target_id]
+			wants_refuse = ai._wants_to_refuse(_gs, pending, target_id)
+		else:
+			# Human target (HvH mode, once we get there).
+			wants_refuse = await _prompt_human_refusal(target_id, pending)
+		if wants_refuse:
+			_tm.refuse(target_id, target_id, refusal)
+
+func _prompt_human_refusal(target_id: int, pending: PendingAction) -> bool:
+	# Only prompt when the human is the target and actually holds a refusal.
+	if target_id != HUMAN_ID:
+		return false
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	var refusal: CardData = null
+	for c in human.hand:
+		if c.action_effect == "sirens_refusal":
+			refusal = c
+			break
+	if refusal == null:
+		return false
+	_show_refusal_modal(pending)
+	var choice: bool = await _refusal_answered
+	_hide_refusal_modal()
+	if choice:
+		_append_log("[b]You[/b] refused with Siren's Refusal")
+	return choice
+
+func _show_refusal_modal(pending: PendingAction) -> void:
+	_refusal_title.text = "%s is playing an action on you" % OPPONENT_NAME
+	_refusal_body.text = _describe_pending_for_refusal(pending)
+	_refusal_scrim.visible = true
+	_refusal_panel.visible = true
+
+func _hide_refusal_modal() -> void:
+	if _refusal_panel != null:
+		_refusal_panel.visible = false
+	if _refusal_scrim != null:
+		_refusal_scrim.visible = false
+
+static func _describe_pending_for_refusal(pending: PendingAction) -> String:
+	match pending.kind:
+		"krakens_grasp":
+			var realm: String = pending.payload.get("realm_name", "your set")
+			return "Kraken's Grasp — stealing your %s.\nRefuse?" % realm
+		"slippery_eel":
+			var card: CardData = pending.payload.get("stolen_card")
+			var nm := card.name if card != null else "a card"
+			return "Slippery Eel — taking your %s.\nRefuse?" % nm
+		"trade_winds":
+			# From the initiator's PendingAction: own_card = theirs, their_card = yours.
+			var their: CardData = pending.payload.get("own_card")
+			var yours: CardData = pending.payload.get("their_card")
+			return "Trade Winds — swapping %s for %s.\nRefuse?" % [
+				their.name if their else "their card",
+				yours.name if yours else "your card",
+			]
+		"toll_of_the_tides":
+			var per: int = int(pending.payload.get("per_target", 5))
+			return "Toll of the Tides — pay %d ◈.\nRefuse?" % per
+		"sirens_toll":
+			var per: int = int(pending.payload.get("per_target", 5))
+			var r: String = pending.payload.get("charger_realm", "a realm")
+			return "Siren's Toll on %s — pay %d ◈.\nRefuse?" % [r, per]
+		"mermaids_feast":
+			var per: int = int(pending.payload.get("per_target", 2))
+			return "Mermaid's Feast — pay %d ◈.\nRefuse?" % per
+		"tribute":
+			var per: int = int(pending.payload.get("per_target", 0))
+			var r: String = pending.payload.get("charger_realm", "?")
+			return "Tribute on %s — pay %d ◈.\nRefuse?" % [r, per]
+	return "Action against you.\nRefuse?"
 
 # --- Rendering -----------------------------------------------------------
 
@@ -273,10 +441,11 @@ func _refresh_hand() -> void:
 
 func _refresh_actions() -> void:
 	if _state == InteractionState.GAME_OVER:
+		# Game-over overlay owns the flow — the underlying bar just goes quiet.
 		_bank_button.disabled = true
 		_play_button.disabled = true
-		_end_turn_button.disabled = false
-		_end_turn_button.text = "Main Menu"
+		_end_turn_button.disabled = true
+		_end_turn_button.text = "End turn"
 		return
 	if _state == InteractionState.DISCARD:
 		_bank_button.disabled = true
@@ -324,6 +493,20 @@ func _prompt(msg: String) -> void:
 	if _prompt_label != null:
 		_prompt_label.text = msg
 
+# Brief centred banner flashed on turn changes. Fades in fast, holds, fades
+# out — non-blocking so the AI turn can begin underneath it.
+func _flash_turn_banner(text: String) -> void:
+	if _turn_banner == null:
+		return
+	_turn_banner.text = text
+	_turn_banner.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(_turn_banner, "modulate:a", 1.0, 0.18)
+	tw.tween_interval(0.55)
+	tw.tween_property(_turn_banner, "modulate:a", 0.0, 0.35)
+	if _sfx != null:
+		_sfx.play("turn_change")
+
 # --- Play log ------------------------------------------------------------
 
 func _on_play_logged(actor_id: int, text: String) -> void:
@@ -337,6 +520,16 @@ func _on_play_logged(actor_id: int, text: String) -> void:
 	if _ais.has(1):
 		line = line.replace("P1", OPPONENT_NAME)
 	_append_log("[b]%s[/b] %s" % [who, line])
+	# Bucket the log line into an SFX event by looking at the leading verb.
+	if _sfx != null:
+		if text.begins_with("banked"):
+			_sfx.play("card_bank")
+		elif text.begins_with("laid"):
+			_sfx.play("card_play")
+		elif text.begins_with("drew"):
+			pass  # draws are noisy — don't fire on every refill
+		else:
+			_sfx.play("action")
 
 func _append_log(bbcode_line: String) -> void:
 	if _log_list == null:
@@ -420,7 +613,6 @@ func _on_play_pressed() -> void:
 
 func _on_end_turn_pressed() -> void:
 	if _state == InteractionState.GAME_OVER:
-		get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
 		return
 	if _state == InteractionState.DISCARD:
 		var need: int = int(_ctx.get("discard_needed", 0))
@@ -455,6 +647,26 @@ func _on_opp_chip_pressed(player_id: int, realm_name: String) -> void:
 			return
 		_do_kraken(target_id, realm_name)
 		return
+	if _state == InteractionState.SELECT_OPP_CARD:
+		# Eel / Trade Winds — chip tap opens the realm's card peek in picker
+		# mode. Enforce the "no complete sets, no empty realms" rule.
+		var pick_target: int = int(_ctx.get("eel_target", _ctx.get("trade_target", -1)))
+		if player_id != pick_target:
+			return
+		var opp: PlayerState = _gs.players[player_id]
+		if opp.is_realm_complete(realm_name):
+			_prompt("Can only take a loose card from an incomplete set.")
+			return
+		var stack: Array = opp.realms.get(realm_name, [])
+		if stack.is_empty():
+			return
+		var kind: String = _ctx.get("card_pick_kind", "")
+		match kind:
+			"eel":
+				_show_realm_peek(player_id, realm_name, Callable(self, "_eel_stolen_picked"))
+			"trade_theirs":
+				_show_realm_peek(player_id, realm_name, Callable(self, "_trade_theirs_picked"))
+		return
 	_show_realm_peek(player_id, realm_name)
 
 func _on_own_chip_pressed(player_id: int, realm_name: String) -> void:
@@ -488,6 +700,17 @@ func _on_own_chip_pressed(player_id: int, realm_name: String) -> void:
 		if not _is_valid_charger_realm(_selected_card, realm_name):
 			return
 		_tribute_pick_target(realm_name)
+		return
+	elif _state == InteractionState.SELECT_OWN_CARD_FOR_TRADE:
+		# Trade Winds — pick which of your own loose cards to hand over.
+		var me: PlayerState = _gs.players[HUMAN_ID]
+		if me.is_realm_complete(realm_name):
+			_prompt("Can only give up a loose card from an incomplete set.")
+			return
+		var stack: Array = me.realms.get(realm_name, [])
+		if stack.is_empty():
+			return
+		_show_realm_peek(HUMAN_ID, realm_name, Callable(self, "_trade_own_picked"))
 		return
 	_show_realm_peek(player_id, realm_name)
 
@@ -526,9 +749,15 @@ func _begin_play_action(card: CardData) -> void:
 				_prompt("Rode the Current — drew 2.")
 			_reset_to_idle()
 		"mermaids_feast":
-			var owed := _tm.play_mermaids_feast(card)
-			_settle_owed_to_human(owed, "Mermaid's Feast")
-			_reset_to_idle()
+			var pending := _tm.initiate_mermaids_feast(card)
+			if pending == null:
+				_reset_to_idle()
+			else:
+				await _open_refusal_window()
+				var result: Variant = _tm.resolve_pending()
+				if result is Dictionary:
+					_settle_owed_to_human(result, "Mermaid's Feast")
+				_reset_to_idle()
 		"toll_of_the_tides":
 			_prompt_opponent_pick("Toll of the Tides — target?", Callable(self, "_do_toll"))
 		"krakens_grasp":
@@ -548,61 +777,84 @@ func _do_toll(target_id: int) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	var owed := _tm.play_toll_of_the_tides(_selected_card, target_id)
-	_settle_owed_to_human(owed, "Toll of the Tides")
+	var pending := _tm.initiate_toll_of_the_tides(_selected_card, target_id)
+	if pending == null:
+		_reset_to_idle()
+		return
+	await _open_refusal_window()
+	var result: Variant = _tm.resolve_pending()
+	if result is Dictionary:
+		_settle_owed_to_human(result, "Toll of the Tides")
 	_reset_to_idle()
 
 func _kraken_pick_realm(target_id: int) -> void:
 	_hide_menu()
 	var opp: PlayerState = _gs.players[target_id]
-	var options: Array = []
+	var complete: Array[String] = []
 	for r in opp.realms.keys():
 		if opp.is_realm_complete(r):
-			options.append({"label": r, "cb": Callable(self, "_do_kraken").bind(target_id, r)})
-	if options.is_empty():
+			complete.append(r)
+	if complete.is_empty():
 		_prompt("%s has no completed sets." % OPPONENT_NAME)
 		_reset_to_idle()
 		return
-	# If only one, skip the menu; otherwise pop the picker AND allow tapping
-	# the opponent's realm chip directly.
 	_ctx["target_id"] = target_id
-	if options.size() == 1:
-		var only: Dictionary = options[0]
-		var cb: Callable = only["cb"]
-		cb.call()
+	if complete.size() == 1:
+		_do_kraken(target_id, complete[0])
 		return
+	# Multiple completed sets — the gold border on the opponent's chips marks
+	# which are stealable. Player taps the coloured chip directly, no menu.
 	_state = InteractionState.SELECT_OPP_REALM
-	_show_menu("Kraken's Grasp — which set? (or tap a chip)", options)
+	_prompt("Tap %s's completed set (gold border) to steal it." % OPPONENT_NAME)
 
 func _do_kraken(target_id: int, realm_name: String) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	if _tm.play_krakens_grasp(_selected_card, target_id, realm_name):
+	var pending := _tm.initiate_krakens_grasp(_selected_card, target_id, realm_name)
+	if pending == null:
+		_reset_to_idle()
+		return
+	await _open_refusal_window()
+	var result: Variant = _tm.resolve_pending()
+	if bool(result):
 		_prompt("Stole %s." % realm_name)
+	else:
+		_prompt("Kraken refused.")
 	_reset_to_idle()
 
 func _eel_pick_card(target_id: int) -> void:
 	_hide_menu()
 	var opp: PlayerState = _gs.players[target_id]
-	# Pop a menu listing every loose card on their board — tapping a chip
-	# would only get us the realm, not the specific card.
-	var options: Array = []
+	# Enumerate incomplete realms with at least one loose card.
+	var stealable_realms: Array[String] = []
 	for r in opp.realms.keys():
 		if opp.is_realm_complete(r):
 			continue
-		var stack: Array = opp.realms[r]
-		for c in stack:
-			options.append({
-				"label": "%s (%s, %d ◈)" % [c.name, r, c.value],
-				"cb": Callable(self, "_eel_pick_dest").bind(target_id, c),
-			})
-	if options.is_empty():
+		if (opp.realms[r] as Array).is_empty():
+			continue
+		stealable_realms.append(r)
+	if stealable_realms.is_empty():
 		_prompt("No loose card to steal.")
 		_reset_to_idle()
 		return
+	_ctx["eel_target"] = target_id
+	_ctx["card_pick_kind"] = "eel"
+	# If there's only one candidate set, jump straight to its card picker;
+	# otherwise prompt for a chip tap.
+	if stealable_realms.size() == 1:
+		_show_realm_peek(target_id, stealable_realms[0], Callable(self, "_eel_stolen_picked"))
+		_state = InteractionState.SELECT_OPP_CARD
+		return
 	_state = InteractionState.SELECT_OPP_CARD
-	_show_menu("Slippery Eel — which card?", options)
+	_prompt("Tap %s's incomplete set to see the cards, then tap the one to steal." % OPPONENT_NAME)
+
+func _eel_stolen_picked(card: CardData) -> void:
+	var target_id: int = int(_ctx.get("eel_target", -1))
+	if target_id < 0 or card == null:
+		_reset_to_idle()
+		return
+	_eel_pick_dest(target_id, card)
 
 func _eel_pick_dest(target_id: int, stolen: CardData) -> void:
 	_hide_menu()
@@ -625,66 +877,93 @@ func _do_eel(dest_realm: String) -> void:
 	if target_id < 0 or stolen == null:
 		_reset_to_idle()
 		return
-	if _tm.play_slippery_eel(_selected_card, target_id, stolen, dest_realm):
+	var pending := _tm.initiate_slippery_eel(_selected_card, target_id, stolen, dest_realm)
+	if pending == null:
+		_reset_to_idle()
+		return
+	await _open_refusal_window()
+	var result: Variant = _tm.resolve_pending()
+	if bool(result):
 		_prompt("Stole %s." % stolen.name)
+	else:
+		_prompt("Eel refused.")
 	_reset_to_idle()
 
 func _trade_pick_their_card(target_id: int) -> void:
 	_hide_menu()
 	_ctx["trade_target"] = target_id
 	var opp: PlayerState = _gs.players[target_id]
-	var options: Array = []
+	var stealable_realms: Array[String] = []
 	for r in opp.realms.keys():
 		if opp.is_realm_complete(r):
 			continue
-		var stack: Array = opp.realms[r]
-		for c in stack:
-			options.append({
-				"label": "%s (%s, %d ◈)" % [c.name, r, c.value],
-				"cb": Callable(self, "_trade_pick_own_card").bind(r, c),
-			})
-	if options.is_empty():
+		if (opp.realms[r] as Array).is_empty():
+			continue
+		stealable_realms.append(r)
+	if stealable_realms.is_empty():
 		_prompt("No loose card to take.")
 		_reset_to_idle()
 		return
 	_state = InteractionState.SELECT_OPP_CARD
-	_show_menu("Trade Winds — take which of theirs?", options)
+	_ctx["card_pick_kind"] = "trade_theirs"
+	if stealable_realms.size() == 1:
+		_show_realm_peek(target_id, stealable_realms[0], Callable(self, "_trade_theirs_picked"))
+		return
+	_prompt("Tap %s's incomplete set to see the cards, then tap the one you want." % OPPONENT_NAME)
 
-func _trade_pick_own_card(_their_realm: String, their_card: CardData) -> void:
-	_hide_menu()
-	_ctx["trade_their_card"] = their_card
+func _trade_theirs_picked(card: CardData) -> void:
+	if card == null:
+		_reset_to_idle()
+		return
+	_ctx["trade_their_card"] = card
+	# Now pick one of our own loose cards to hand over.
 	var human: PlayerState = _gs.players[HUMAN_ID]
-	var options: Array = []
+	var own_realms: Array[String] = []
 	for r in human.realms.keys():
 		if human.is_realm_complete(r):
 			continue
-		var stack: Array = human.realms[r]
-		for c in stack:
-			options.append({
-				"label": "%s (%s, %d ◈)" % [c.name, r, c.value],
-				"cb": Callable(self, "_trade_pick_their_dest").bind(r, c),
-			})
-	if options.is_empty():
+		if (human.realms[r] as Array).is_empty():
+			continue
+		own_realms.append(r)
+	if own_realms.is_empty():
 		_prompt("No loose card of yours to give up.")
 		_reset_to_idle()
 		return
 	_state = InteractionState.SELECT_OWN_CARD_FOR_TRADE
-	_show_menu("Trade Winds — give up which of yours?", options)
+	_ctx["card_pick_kind"] = "trade_own"
+	if own_realms.size() == 1:
+		_show_realm_peek(HUMAN_ID, own_realms[0], Callable(self, "_trade_own_picked"))
+		return
+	_prompt("Tap one of your incomplete sets, then tap the card to hand over.")
+
+func _trade_own_picked(card: CardData) -> void:
+	if card == null:
+		_reset_to_idle()
+		return
+	# _trade_pick_their_dest picks the destination realm on our board for
+	# their card. Its first arg (own_realm) is ignored — we only need the card.
+	_trade_pick_their_dest("", card)
 
 func _trade_pick_their_dest(_own_realm: String, own_card: CardData) -> void:
+	# First destination menu — where THEIR card lands on OUR board.
 	_hide_menu()
 	_ctx["trade_own_card"] = own_card
 	var their_card: CardData = _ctx["trade_their_card"]
-	var options := _destination_options_for(their_card, Callable(self, "_trade_pick_our_dest"))
+	var options := _destination_options_for(their_card, Callable(self, "_trade_pick_own_board_dest"))
 	if options.is_empty():
 		_prompt("Nowhere on your board for that card.")
 		_reset_to_idle()
 		return
 	_show_menu("Place their card in your…", options)
 
-func _trade_pick_our_dest(their_dest_realm: String) -> void:
+# Named for clarity: `own_board_dest` = destination on OUR board (resolver's
+# own_dest_realm). Fixes an arg-order bug where this used to be named
+# their_dest_realm and passed into the wrong resolver slot — the internal
+# can-be-assigned-to check then compared each card against the wrong realm
+# and silently rejected the trade.
+func _trade_pick_own_board_dest(own_board_dest: String) -> void:
 	_hide_menu()
-	_ctx["trade_their_dest"] = their_dest_realm
+	_ctx["trade_own_board_dest"] = own_board_dest
 	var opp_id: int = int(_ctx["trade_target"])
 	var opp: PlayerState = _gs.players[opp_id]
 	var own_card: CardData = _ctx["trade_own_card"]
@@ -699,16 +978,27 @@ func _trade_pick_our_dest(their_dest_realm: String) -> void:
 		return
 	_show_menu("Place your card on their…", options)
 
-func _do_trade(own_dest_realm: String) -> void:
+# `their_board_dest` = destination on THEIR board (resolver's their_dest_realm).
+func _do_trade(their_board_dest: String) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
 	var opp_id: int = int(_ctx["trade_target"])
 	var own_card: CardData = _ctx["trade_own_card"]
-	var their_dest: String = _ctx["trade_their_dest"]
 	var their_card: CardData = _ctx["trade_their_card"]
-	if _tm.play_trade_winds(_selected_card, opp_id, own_card, their_dest, their_card, own_dest_realm):
+	var own_board_dest: String = _ctx["trade_own_board_dest"]
+	# Resolver order: (own_card, their_dest_realm, their_card, own_dest_realm)
+	var pending := _tm.initiate_trade_winds(_selected_card, opp_id,
+		own_card, their_board_dest, their_card, own_board_dest)
+	if pending == null:
+		_reset_to_idle()
+		return
+	await _open_refusal_window()
+	var result: Variant = _tm.resolve_pending()
+	if bool(result):
 		_prompt("Traded %s for %s." % [own_card.name, their_card.name])
+	else:
+		_prompt("Trade refused.")
 	_reset_to_idle()
 
 func _begin_cottage() -> void:
@@ -767,23 +1057,24 @@ func _begin_play_tribute() -> void:
 	if _selected_card == null:
 		return
 	var human: PlayerState = _gs.players[HUMAN_ID]
-	var options: Array = []
+	var eligible: Array[String] = []
 	for r in human.realms.keys():
-		if not _is_valid_charger_realm(_selected_card, r):
-			continue
-		options.append({"label": r, "cb": Callable(self, "_tribute_pick_target").bind(r)})
-	if options.is_empty():
+		if _is_valid_charger_realm(_selected_card, r):
+			eligible.append(r)
+	if eligible.is_empty():
 		# No realm to charge from — offer to bank instead of failing silently.
 		var bank_options: Array = [
 			{"label": "Bank it (%d ◈)" % _selected_card.value, "cb": Callable(self, "_do_bank")},
 		]
 		_show_menu("No matching realm to charge from — bank it?", bank_options)
 		return
-	if options.size() == 1:
-		_tribute_pick_target(options[0]["label"])
+	if eligible.size() == 1:
+		_tribute_pick_target(eligible[0])
 		return
+	# Multiple eligible realms — tap the chip on your own strip. Colour +
+	# progress count on the chip make the choice obvious; no name menu needed.
 	_state = InteractionState.SELECT_OWN_REALM_FOR_CHARGE
-	_show_menu("Charge tribute from your…", options)
+	_prompt("Tap your realm to charge from.")
 
 # --- Bank action (button + tribute-no-realm confirmation) ----------------
 
@@ -813,16 +1104,55 @@ func _tribute_pick_target(charger_realm: String) -> void:
 		# charger_realm so _prompt_opponent_pick's .bind(p.id) lands as the
 		# lambda's single argument, in the right position.
 		_prompt_opponent_pick("Siren's Toll — target?",
-			func(target_id: int): _do_tribute(charger_realm, target_id))
+			func(target_id: int): _tribute_maybe_high_tide(charger_realm, target_id))
 	else:
-		_do_tribute(charger_realm, -1)
+		_tribute_maybe_high_tide(charger_realm, -1)
 
-func _do_tribute(charger_realm: String, target_id: int = -1) -> void:
+# After realm + optional target are chosen, offer to stack a High Tide onto
+# the tribute — but only if the player has one in hand AND has a spare play
+# left (High Tide burns an extra play). If either check fails, just charge
+# the tribute straight through.
+func _tribute_maybe_high_tide(charger_realm: String, target_id: int) -> void:
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	var high_tide: CardData = null
+	for c in human.hand:
+		if c.action_effect == "high_tide":
+			high_tide = c
+			break
+	# High Tide is free (rides along with the tribute), so no extra-play
+	# check needed — offer it whenever the player holds one.
+	if high_tide == null:
+		_do_tribute(charger_realm, target_id, null)
+		return
+	var base_rent := RentCalculator.rent(human, charger_realm, false)
+	var high_tide_rent := RentCalculator.rent(human, charger_realm, true)
+	var options: Array = [
+		{
+			"label": "Charge %d ◈" % base_rent,
+			"cb": Callable(self, "_do_tribute").bind(charger_realm, target_id, null),
+		},
+		{
+			"label": "Charge with High Tide — %d ◈ (free)" % high_tide_rent,
+			"cb": Callable(self, "_do_tribute").bind(charger_realm, target_id, high_tide),
+		},
+	]
+	_show_menu("Add High Tide?", options)
+
+func _do_tribute(charger_realm: String, target_id: int = -1, high_tide: CardData = null) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	var owed := _tm.charge_tribute(_selected_card, charger_realm, target_id, null)
-	_settle_owed_to_human(owed, "Tribute (%s)" % charger_realm)
+	var pending := _tm.initiate_tribute(_selected_card, charger_realm, target_id, high_tide)
+	if pending == null:
+		_reset_to_idle()
+		return
+	await _open_refusal_window()
+	var result: Variant = _tm.resolve_pending()
+	var label := "Tribute (%s)" % charger_realm
+	if high_tide != null:
+		label += " + High Tide"
+	if result is Dictionary:
+		_settle_owed_to_human(result, label)
 	_reset_to_idle()
 
 # --- Target-picker plumbing ---------------------------------------------
@@ -918,11 +1248,13 @@ func _hide_menu() -> void:
 
 # --- Realm peek overlay --------------------------------------------------
 
-# Popup that shows the full card faces in one realm on tap. Purely
-# informational — doesn't touch state, doesn't consume a play. On the human's
-# own realms, tapping a wild card opens a target-realm picker so wilds can
-# be shifted freely on your turn (also free — doesn't count as a play).
-func _show_realm_peek(player_id: int, realm_name: String) -> void:
+# Popup that shows the full card faces in one realm on tap. Two modes:
+#   * informational (default) — read-only, plus a wild-shift affordance on
+#     your own realms.
+#   * picker (pick_cb set) — every card tap fires the callback with the card;
+#     used by Slippery Eel and Trade Winds to let the player pick a specific
+#     card visually rather than from a text menu.
+func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Callable()) -> void:
 	var player: PlayerState = _gs.players[player_id]
 	var stack: Array = player.realms.get(realm_name, [])
 	_peek_title.text = realm_name
@@ -939,17 +1271,23 @@ func _show_realm_peek(player_id: int, realm_name: String) -> void:
 		for m in mods:
 			mod_names.append(_modifier_display_name(m))
 		_peek_subtitle.text += " · " + " + ".join(mod_names)
-	# Prompt for the wild-shift affordance — only meaningful on your own board.
-	var can_shift := player_id == HUMAN_ID \
-		and _gs.current_player_index == HUMAN_ID \
-		and _state == InteractionState.IDLE \
-		and _stack_has_shiftable_wild(stack, realm_name)
-	if can_shift:
+	# Picker mode wins over wild-shift hint if both would apply.
+	if pick_cb.is_valid():
+		_peek_subtitle.text += "\nTap a card to choose it."
+	elif player_id == HUMAN_ID \
+			and _gs.current_player_index == HUMAN_ID \
+			and _state == InteractionState.IDLE \
+			and _stack_has_shiftable_wild(stack, realm_name):
 		_peek_subtitle.text += "\nTap a wild to move it (free)."
 
-	# Stash context so the tap handler knows which realm/player we're peeking.
+	# Stash context so the tap handler knows which realm/player we're peeking,
+	# and (if picker) the callback to invoke.
 	_ctx["peek_player"] = player_id
 	_ctx["peek_realm"] = realm_name
+	if pick_cb.is_valid():
+		_ctx["peek_pick_cb"] = pick_cb
+	else:
+		_ctx.erase("peek_pick_cb")
 
 	for child in _peek_row.get_children():
 		child.queue_free()
@@ -979,6 +1317,15 @@ func _stack_has_shiftable_wild(stack: Array, current_realm: String) -> bool:
 	return false
 
 func _on_peek_card_selected(card: CardData) -> void:
+	# Picker mode: a targeting flow (Eel / Trade) opened the peek to let the
+	# player pick a specific card. Fire its callback and dismiss.
+	var pick_cb_var: Variant = _ctx.get("peek_pick_cb")
+	if pick_cb_var is Callable and (pick_cb_var as Callable).is_valid():
+		var cb: Callable = pick_cb_var
+		_hide_peek()
+		cb.call(card)
+		return
+	# Informational mode: on your own realm, tapping a wild opens a move menu.
 	var pid: int = int(_ctx.get("peek_player", -1))
 	var realm: String = _ctx.get("peek_realm", "")
 	if pid != HUMAN_ID or _gs.current_player_index != HUMAN_ID:
@@ -1158,7 +1505,7 @@ static func _action_description(effect: String) -> String:
 		"trade_winds": return "Swap one of your realm cards for one of an opponent's."
 		"krakens_grasp": return "Steal an entire completed realm from any opponent."
 		"sirens_refusal": return "Cancel an action played against you. Played reactively — hold it for defense, or bank it."
-		"high_tide": return "Doubles the next Tribute you charge this turn. Uses an extra play. Cannot be played on its own — bank it, or hold it."
+		"high_tide": return "Doubles the next Tribute you charge this turn. Free — doesn't use a play. Cannot be played on its own — bank it, or hold it."
 		"coral_cottage": return "Attach to one of your completed realms to raise its rent."
 		"pearl_palace": return "Attach on top of a Coral Cottage for an even bigger rent boost."
 	return ""

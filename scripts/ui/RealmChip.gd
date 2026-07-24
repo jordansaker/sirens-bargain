@@ -9,8 +9,11 @@ signal chip_pressed(realm_name: String)
 
 enum Mode { NORMAL, COMPLETE, EMPTY }
 
-const HEIGHT := 44
-const MIN_WIDTH := 46
+# Sized like a mini card (portrait, matches CardView proportions) so the
+# strip visually reads as "your set of cards" instead of a nav pill.
+const HEIGHT := 68
+const MIN_WIDTH := 48
+const BANNER_HEIGHT := 20
 
 var realm_name: String = ""
 var current: int = 0
@@ -37,14 +40,14 @@ func _ready() -> void:
 	add_child(col)
 
 	_bar = ColorRect.new()
-	_bar.custom_minimum_size = Vector2(0, 5)
+	_bar.custom_minimum_size = Vector2(0, BANNER_HEIGHT)
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_bar)
 
 	_count = Label.new()
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_count.add_theme_font_size_override("font_size", 11)
+	_count.add_theme_font_size_override("font_size", 14)
 	_count.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_count.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_count)

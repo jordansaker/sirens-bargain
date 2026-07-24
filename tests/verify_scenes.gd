@@ -9,6 +9,7 @@ func _init() -> void:
 		"res://scenes/CardView.tscn",
 		"res://scenes/PlayerBoardView.tscn",
 		"res://scenes/MainMenu.tscn",
+		"res://scenes/HowToPlay.tscn",
 		"res://scenes/GameScreen.tscn",
 	]
 	var ok := true
