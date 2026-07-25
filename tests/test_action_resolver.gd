@@ -502,6 +502,33 @@ func test_eel_rejects_card_not_in_hand() -> void:
 	assert_false(tm.play_slippery_eel(stray, 1, stolen, "Kelp Forest"))
 	assert_eq((target.realms["Kelp Forest"] as Array).size(), 2, "Untouched")
 
+func _rainbow_conch(id: String = "wild_rainbow_conch_test") -> CardData:
+	var c := CardData.new()
+	c.id = id
+	c.name = "Rainbow Conch"
+	c.type = CardData.Type.WILD_REALM
+	c.value = 0
+	c.realms = Realms.all_realms()
+	return c
+
+func test_eel_cannot_steal_rainbow_conch() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var thief := gs.current_player()
+	var target := gs.players[1]
+	# Target has a Rainbow Conch loose in Kelp Forest, plus one plain card so
+	# the set is incomplete (so complete-set rule isn't what's blocking us).
+	_stock_realm(target, "Kelp Forest", 1)
+	var conch := _rainbow_conch()
+	target.hand.append(conch)
+	target.play_realm(conch, "Kelp Forest")
+	var eel := _eel()
+	thief.hand.append(eel)
+	assert_false(tm.play_slippery_eel(eel, 1, conch, "Kelp Forest"),
+		"Rainbow Conch is untouchable by Slippery Eel")
+	assert_true((target.realms["Kelp Forest"] as Array).has(conch),
+		"Conch stayed with the target")
+
 # ---- Trade Winds ----
 
 func _trade(id: String = "trade_1") -> CardData:
@@ -533,6 +560,43 @@ func test_trade_winds_swaps_two_realm_cards() -> void:
 	assert_eq((me.realms["Tide Pools"] as Array).size(), 1,
 		"Your Tide came to me")
 	assert_eq((you.realms["Tide Pools"] as Array).size(), 0)
+
+func test_trade_winds_cannot_take_rainbow_conch() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	_stock_realm(me, "Kelp Forest", 1)
+	_stock_realm(you, "Tide Pools", 1)
+	var mine: CardData = (me.realms["Kelp Forest"] as Array)[0]
+	var conch := _rainbow_conch()
+	you.hand.append(conch)
+	you.play_realm(conch, "Tide Pools")
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, mine, "Tide Pools", conch, "Kelp Forest"
+	), "Rainbow Conch is untouchable by Trade Winds (as their card)")
+	assert_true((you.realms["Tide Pools"] as Array).has(conch))
+	assert_true((me.realms["Kelp Forest"] as Array).has(mine))
+
+func test_trade_winds_cannot_offer_rainbow_conch() -> void:
+	var gs := _game(2, [] as Array[CardData])
+	var tm := TurnManager.new(gs)
+	var me := gs.current_player()
+	var you := gs.players[1]
+	var conch := _rainbow_conch()
+	me.hand.append(conch)
+	me.play_realm(conch, "Kelp Forest")
+	_stock_realm(you, "Tide Pools", 1)
+	var theirs: CardData = (you.realms["Tide Pools"] as Array)[0]
+	var trade := _trade()
+	me.hand.append(trade)
+	assert_false(tm.play_trade_winds(
+		trade, 1, conch, "Tide Pools", theirs, "Kelp Forest"
+	), "Rainbow Conch is untouchable by Trade Winds (as own card)")
+	assert_true((me.realms["Kelp Forest"] as Array).has(conch))
+	assert_true((you.realms["Tide Pools"] as Array).has(theirs))
 
 func test_trade_winds_refuses_when_own_side_completed() -> void:
 	var gs := _game(2, [] as Array[CardData])

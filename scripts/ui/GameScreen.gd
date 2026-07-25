@@ -854,6 +854,16 @@ func _eel_stolen_picked(card: CardData) -> void:
 	if target_id < 0 or card == null:
 		_reset_to_idle()
 		return
+	# Rainbow Conch is untouchable — reject with a prompt so the picker feels
+	# consistent (also enforced by the resolver).
+	if card.is_rainbow_conch():
+		_prompt("Rainbow Conch can't be stolen. Pick another card.")
+		# Reopen the peek so the player can try again in the same realm.
+		var pid: int = int(_ctx.get("peek_player", target_id))
+		var realm: String = _ctx.get("peek_realm", "")
+		if not realm.is_empty():
+			_show_realm_peek(pid, realm, Callable(self, "_eel_stolen_picked"))
+		return
 	_eel_pick_dest(target_id, card)
 
 func _eel_pick_dest(target_id: int, stolen: CardData) -> void:
@@ -915,6 +925,13 @@ func _trade_theirs_picked(card: CardData) -> void:
 	if card == null:
 		_reset_to_idle()
 		return
+	if card.is_rainbow_conch():
+		_prompt("Rainbow Conch can't be swapped. Pick another card.")
+		var realm: String = _ctx.get("peek_realm", "")
+		var pid: int = int(_ctx.get("peek_player", _ctx.get("trade_target", -1)))
+		if not realm.is_empty():
+			_show_realm_peek(pid, realm, Callable(self, "_trade_theirs_picked"))
+		return
 	_ctx["trade_their_card"] = card
 	# Now pick one of our own loose cards to hand over.
 	var human: PlayerState = _gs.players[HUMAN_ID]
@@ -939,6 +956,12 @@ func _trade_theirs_picked(card: CardData) -> void:
 func _trade_own_picked(card: CardData) -> void:
 	if card == null:
 		_reset_to_idle()
+		return
+	if card.is_rainbow_conch():
+		_prompt("Rainbow Conch can't be swapped. Pick another card.")
+		var realm: String = _ctx.get("peek_realm", "")
+		if not realm.is_empty():
+			_show_realm_peek(HUMAN_ID, realm, Callable(self, "_trade_own_picked"))
 		return
 	# _trade_pick_their_dest picks the destination realm on our board for
 	# their card. Its first arg (own_realm) is ignored — we only need the card.
@@ -1484,7 +1507,7 @@ static func _card_description(c: CardData) -> String:
 			return "Play into %s to build your set. Complete sets win the game (4 in a 2-player match)." % c.realm
 		CardData.Type.WILD_REALM:
 			if c.is_rainbow_conch():
-				return "Plays into any realm. Cannot be banked as pearls. On your turn you can shift it freely between realms — free action."
+				return "Plays into any realm. Cannot be banked as pearls, and can't be taken by Slippery Eel or Trade Winds. On your turn you can shift it freely between realms — free action."
 			return "Plays into either %s. On your turn you can shift it between the two realms — free action." % " or ".join(c.realms)
 		CardData.Type.PEARL:
 			return "Bank it to pay tributes and other players' actions. Pearls can only be banked, not played."

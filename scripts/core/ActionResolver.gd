@@ -51,6 +51,11 @@ static func slippery_eel(
 			break
 	if target == null:
 		return false
+	# Rainbow Conch is untouchable by Slippery Eel — it's a shared "any realm"
+	# wild and letting it hop between players via a single-card steal would
+	# make it too swingy.
+	if stolen_card.is_rainbow_conch():
+		return false
 	var source_realm := _find_realm(target, stolen_card)
 	if source_realm == "":
 		return false
@@ -80,6 +85,10 @@ static func trade_winds(
 			target = p
 			break
 	if target == null:
+		return false
+	# Rainbow Conch is untouchable — swapping it either direction would let
+	# it change owners outside a full-set steal.
+	if own_card.is_rainbow_conch() or their_card.is_rainbow_conch():
 		return false
 	var own_source := _find_realm(initiator, own_card)
 	if own_source == "":
@@ -166,6 +175,8 @@ static func can_slippery_eel(
 	var target := _player_by_id(gs, target_id)
 	if target == null:
 		return false
+	if stolen_card.is_rainbow_conch():
+		return false
 	var source_realm := _find_realm(target, stolen_card)
 	if source_realm == "":
 		return false
@@ -184,6 +195,8 @@ static func can_trade_winds(
 	var initiator := gs.current_player()
 	var target := _player_by_id(gs, target_id)
 	if target == null:
+		return false
+	if own_card.is_rainbow_conch() or their_card.is_rainbow_conch():
 		return false
 	var own_source := _find_realm(initiator, own_card)
 	if own_source == "":
