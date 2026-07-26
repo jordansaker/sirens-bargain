@@ -60,6 +60,7 @@ static func _card_from_dict(d: Dictionary) -> CardData:
 		tiers_typed.append(int(t))
 	c.rent_tiers = tiers_typed
 	c.action_effect = String(d.get("action_effect", ""))
+	c.art_path = String(d.get("art", ""))
 	return c
 
 static func build_deck() -> Array[CardData]:

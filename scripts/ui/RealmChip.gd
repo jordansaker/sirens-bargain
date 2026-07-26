@@ -11,9 +11,9 @@ enum Mode { NORMAL, COMPLETE, EMPTY }
 
 # Sized like a mini card (portrait, matches CardView proportions) so the
 # strip visually reads as "your set of cards" instead of a nav pill.
-const HEIGHT := 68
-const MIN_WIDTH := 48
-const BANNER_HEIGHT := 20
+const HEIGHT := 40
+const MIN_WIDTH := 40
+const BANNER_HEIGHT := 12
 
 var realm_name: String = ""
 var current: int = 0

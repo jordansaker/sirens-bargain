@@ -49,7 +49,7 @@ theme_override_constants/separation = 14
 alignment = 1
 
 [node name="DrawPileBox" type="Control" parent="Root/GameCol/MidTable"]
-custom_minimum_size = Vector2(90, 126)
+custom_minimum_size = Vector2(72, 100)
 layout_mode = 2
 
 [node name="DrawTexture" type="TextureRect" parent="Root/GameCol/MidTable/DrawPileBox"]
@@ -101,7 +101,7 @@ theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 
 [node name="DiscardPileBox" type="PanelContainer" parent="Root/GameCol/MidTable"]
-custom_minimum_size = Vector2(90, 126)
+custom_minimum_size = Vector2(72, 100)
 layout_mode = 2
 
 [node name="DiscardInner" type="VBoxContainer" parent="Root/GameCol/MidTable/DiscardPileBox"]
@@ -159,7 +159,7 @@ theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 
 [node name="HandScroll" type="ScrollContainer" parent="Root/GameCol"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 152)
+custom_minimum_size = Vector2(0, 340)
 horizontal_scroll_mode = 2
 vertical_scroll_mode = 0
 

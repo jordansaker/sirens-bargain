@@ -17,6 +17,9 @@ enum Type {
 @export var realms: Array[String] = []
 @export var rent_tiers: Array[int] = []
 @export var action_effect: String = ""
+# Optional res:// path to the card's full-face art. Empty falls back to the
+# placeholder banner-and-label rendering in CardView.
+@export var art_path: String = ""
 
 func is_rainbow_conch() -> bool:
 	return id.begins_with("wild_rainbow_conch")

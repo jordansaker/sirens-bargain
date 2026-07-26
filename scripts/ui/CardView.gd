@@ -13,11 +13,11 @@ extends PanelContainer
 
 signal selected(card: CardData)
 
-const WIDTH := 90
-const HEIGHT := 126
-const LIFT_PX := 16
+const WIDTH := 220
+const HEIGHT := 308
+const LIFT_PX := 28
 
-const BANNER_HEIGHT := 20
+const BANNER_HEIGHT := 40
 
 var card: CardData:
 	set(value):
@@ -36,6 +36,8 @@ var _banner: ColorRect
 var _title_label: Label
 var _value_label: Label
 var _hint_label: Label
+var _placeholder_col: VBoxContainer
+var _art: TextureRect
 
 func _ready() -> void:
 	# Only apply the default floor if the caller didn't set their own — some
@@ -49,13 +51,13 @@ func _ready() -> void:
 	_refresh()
 
 func _build_children() -> void:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 0)
-	add_child(col)
+	_placeholder_col = VBoxContainer.new()
+	_placeholder_col.add_theme_constant_override("separation", 0)
+	add_child(_placeholder_col)
 
 	_banner = ColorRect.new()
 	_banner.custom_minimum_size = Vector2(0, BANNER_HEIGHT)
-	col.add_child(_banner)
+	_placeholder_col.add_child(_banner)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 4)
@@ -63,7 +65,7 @@ func _build_children() -> void:
 	margin.add_theme_constant_override("margin_top", 4)
 	margin.add_theme_constant_override("margin_bottom", 4)
 	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_child(margin)
+	_placeholder_col.add_child(margin)
 
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 2)
@@ -72,20 +74,31 @@ func _build_children() -> void:
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_title_label.add_theme_font_size_override("font_size", 12)
+	_title_label.add_theme_font_size_override("font_size", 20)
 	_title_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(_title_label)
 
 	_value_label = Label.new()
 	_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_value_label.add_theme_font_size_override("font_size", 11)
+	_value_label.add_theme_font_size_override("font_size", 17)
 	body.add_child(_value_label)
 
 	_hint_label = Label.new()
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint_label.add_theme_font_size_override("font_size", 10)
+	_hint_label.add_theme_font_size_override("font_size", 14)
 	_hint_label.visible = false
 	body.add_child(_hint_label)
+
+	# Art overlay — added AFTER the placeholder column so it renders on top
+	# when a card provides its own art. Ignores mouse so taps still fire the
+	# CardView's own gui_input.
+	_art = TextureRect.new()
+	_art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_art.visible = false
+	add_child(_art)
 
 func set_highlighted(on: bool) -> void:
 	# Legacy shim — old code called this for discard-selection highlighting.
@@ -105,12 +118,36 @@ func _refresh() -> void:
 		_hint_label.text = ""
 		_hint_label.visible = false
 		_banner.color = CardColors.INK
+		if _art != null:
+			_art.texture = null
+			_art.visible = false
 		return
+	# Prefer the per-card art if the file loads; otherwise fall back to the
+	# placeholder banner-and-label layout so cards without art still read.
+	var tex := _load_card_art(card.art_path)
+	if tex != null:
+		_art.texture = tex
+		_art.visible = true
+		_placeholder_col.visible = false
+	else:
+		_art.texture = null
+		_art.visible = false
+		_placeholder_col.visible = true
 	_banner.color = CardColors.for_card(card)
 	_title_label.text = _short_name_for(card)
 	_value_label.text = "%d ◈" % card.value if card.value > 0 else ""
-	_hint_label.visible = selected_state
+	_hint_label.visible = selected_state and _art != null and not _art.visible
 	_hint_label.text = "tap Play / Bank"
+
+static func _load_card_art(path: String) -> Texture2D:
+	if path.is_empty():
+		return null
+	if not ResourceLoader.exists(path):
+		return null
+	var res := load(path)
+	if res is Texture2D:
+		return res
+	return null
 
 # Truncate long card names so they don't wrap past two lines on a 62-wide card.
 func _short_name_for(c: CardData) -> String:

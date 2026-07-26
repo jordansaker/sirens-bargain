@@ -95,6 +95,7 @@ signal _refusal_answered(refuse: bool)
 @onready var _card_peek_close: Button = %CardPeekClose
 
 var _card_peek_card: CardData = null
+var _card_peek_art: TextureRect = null
 
 var _gs: GameState
 var _tm: TurnManager
@@ -605,9 +606,11 @@ func _on_play_pressed() -> void:
 		CardData.Type.REALM, CardData.Type.WILD_REALM:
 			_begin_play_realm()
 		CardData.Type.TRIBUTE:
-			_begin_play_tribute()
+			# Tribute chain is a coroutine — await it so the tail
+			# (_reset_to_idle) doesn't get orphaned.
+			await _begin_play_tribute()
 		CardData.Type.ACTION:
-			_begin_play_action(card)
+			await _begin_play_action(card)
 		_:
 			_reset_to_idle()
 
@@ -699,7 +702,7 @@ func _on_own_chip_pressed(player_id: int, realm_name: String) -> void:
 	elif _state == InteractionState.SELECT_OWN_REALM_FOR_CHARGE:
 		if not _is_valid_charger_realm(_selected_card, realm_name):
 			return
-		_tribute_pick_target(realm_name)
+		await _tribute_pick_target(realm_name)
 		return
 	elif _state == InteractionState.SELECT_OWN_CARD_FOR_TRADE:
 		# Trade Winds — pick which of your own loose cards to hand over.
@@ -759,13 +762,13 @@ func _begin_play_action(card: CardData) -> void:
 					_settle_owed_to_human(result, "Mermaid's Feast")
 				_reset_to_idle()
 		"toll_of_the_tides":
-			_prompt_opponent_pick("Toll of the Tides — target?", Callable(self, "_do_toll"))
+			await _prompt_opponent_pick("Toll of the Tides — target?", Callable(self, "_do_toll"))
 		"krakens_grasp":
-			_prompt_opponent_pick("Kraken's Grasp — target?", Callable(self, "_kraken_pick_realm"))
+			await _prompt_opponent_pick("Kraken's Grasp — target?", Callable(self, "_kraken_pick_realm"))
 		"slippery_eel":
-			_prompt_opponent_pick("Slippery Eel — target?", Callable(self, "_eel_pick_card"))
+			await _prompt_opponent_pick("Slippery Eel — target?", Callable(self, "_eel_pick_card"))
 		"trade_winds":
-			_prompt_opponent_pick("Trade Winds — target?", Callable(self, "_trade_pick_their_card"))
+			await _prompt_opponent_pick("Trade Winds — target?", Callable(self, "_trade_pick_their_card"))
 		"coral_cottage":
 			_begin_cottage()
 		"pearl_palace":
@@ -1092,7 +1095,7 @@ func _begin_play_tribute() -> void:
 		_show_menu("No matching realm to charge from — bank it?", bank_options)
 		return
 	if eligible.size() == 1:
-		_tribute_pick_target(eligible[0])
+		await _tribute_pick_target(eligible[0])
 		return
 	# Multiple eligible realms — tap the chip on your own strip. Colour +
 	# progress count on the chip make the choice obvious; no name menu needed.
@@ -1126,7 +1129,7 @@ func _tribute_pick_target(charger_realm: String) -> void:
 		# Siren's Toll — needs a chosen target. The lambda awaits the coroutine
 		# chain so a paused _do_tribute (e.g. an HvH refusal modal) doesn't
 		# leave the tribute in limbo.
-		_prompt_opponent_pick("Siren's Toll — target?",
+		await _prompt_opponent_pick("Siren's Toll — target?",
 			func(target_id: int): await _tribute_maybe_high_tide(charger_realm, target_id))
 	else:
 		await _tribute_maybe_high_tide(charger_realm, -1)
@@ -1194,7 +1197,9 @@ func _prompt_opponent_pick(title: String, cb: Callable) -> void:
 	if options.size() == 1:
 		var only: Dictionary = options[0]
 		var only_cb: Callable = only["cb"]
-		only_cb.call()
+		# await — the callback (Kraken picker, Eel picker, etc.) is a coroutine.
+		# A sync call could detach the tail.
+		await only_cb.call()
 		return
 	_state = InteractionState.SELECT_OPP_PLAYER
 	_show_menu(title, options)
@@ -1260,7 +1265,11 @@ func _show_menu(title: String, options: Array) -> void:
 		b.custom_minimum_size = Vector2(0, 48)
 		var cb: Callable = opt["cb"]
 		if cb.is_valid():
-			b.pressed.connect(func(): cb.call())
+			# Await the callable — several menu callbacks are coroutines
+			# (_do_tribute, _do_kraken, etc.). Without await, if they pause
+			# even briefly, the tail (_reset_to_idle) runs detached and the
+			# UI can get stuck in a non-IDLE state.
+			b.pressed.connect(func(): await cb.call())
 		else:
 			b.disabled = true
 		_menu_buttons.add_child(b)
@@ -1419,6 +1428,20 @@ func _style_card_peek() -> void:
 	# Inner panels (body + info) — subtle darker fill with hairline edge.
 	_apply_inner_panel_style(_card_peek_body)
 	_apply_inner_panel_style(_card_peek_info)
+	# Full-face art node — sits AS the card in the popup (not inside the info
+	# body). Fills the space above the button row; the placeholder banner /
+	# body / info panels only show when the card has no art asset.
+	_card_peek_art = TextureRect.new()
+	_card_peek_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_card_peek_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_card_peek_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card_peek_art.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_card_peek_art.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_card_peek_art.visible = false
+	var vbox := _card_peek_banner.get_parent()
+	vbox.add_child(_card_peek_art)
+	# Move it to the top so it sits above the placeholder + actions row.
+	vbox.move_child(_card_peek_art, 0)
 
 func _apply_inner_panel_style(p: Panel) -> void:
 	var sb := StyleBoxFlat.new()
@@ -1454,6 +1477,24 @@ func _show_card_peek(card: CardData) -> void:
 	_card_peek_subtype.text = _card_subtype_text(card)
 	_card_peek_description.text = _card_description(card)
 	_card_peek_info_text.text = _card_info_text(card)
+	# Art mode: fills the popup as the whole card face and hides all the
+	# placeholder chrome (banner, body panel, info panel) — only the button
+	# row stays visible below.
+	# Text mode (no art): shows the placeholder banner + description + info,
+	# just as before, so actions/tributes still read.
+	var art_tex := CardView._load_card_art(card.art_path)
+	if art_tex != null:
+		_card_peek_art.texture = art_tex
+		_card_peek_art.visible = true
+		_card_peek_banner.visible = false
+		_card_peek_body.visible = false
+		_card_peek_info.visible = false
+	else:
+		_card_peek_art.texture = null
+		_card_peek_art.visible = false
+		_card_peek_banner.visible = true
+		_card_peek_body.visible = true
+		_card_peek_info.visible = true
 
 	# Button enablement mirrors the bottom bar rules.
 	var can_play_turn := _tm.can_play() and _gs.current_player_index == HUMAN_ID
