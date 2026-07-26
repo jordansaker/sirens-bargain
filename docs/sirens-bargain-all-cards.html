@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Siren's Bargain — every card</title>
+<style>
+  :root{
+    --ink:#0B1D33; --ink-deep:#0A1626; --gold:#C9A227; --panel:#14304F;
+    --panel-edge:#22496F; --foam:#F2F6F5; --mist:#C4D6E2; --haze:#9DB6C4;
+    --pearl:#EDE6D4; --pearl-lt:#FBF7EC; --pearl-dk:#3B2E12; --cliff:#1F4370;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:32px 20px 60px; background:#EFECE4;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#2C2C2A;
+  }
+  header{max-width:1040px; margin:0 auto 8px; display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:12px;}
+  h1{font-size:22px; font-weight:600; margin:0;}
+  .sub{font-size:13px; color:#5F5E5A; max-width:560px; line-height:1.6; margin:6px auto 0; max-width:1040px;}
+  .bar{max-width:1040px; margin:16px auto 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .count-pill{font-size:12px; color:#5F5E5A; background:#E3DFD4; border-radius:20px; padding:4px 11px;}
+  button.print{font:inherit; font-size:13px; border:none; background:#0B1D33; color:#EDE6D4; padding:8px 16px; border-radius:8px; cursor:pointer;}
+  button.print:hover{background:#14304F;}
+
+  .section-label{max-width:1040px; margin:34px auto 12px; font-size:13px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:#6A5A2C; border-bottom:1px solid #D3CFC2; padding-bottom:6px;}
+  .grid{max-width:1040px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fill,180px); gap:16px; justify-content:center;}
+
+  .card{width:180px; height:252px; border-radius:10px; background:var(--ink); border:1px solid var(--gold); padding:8px; display:flex; flex-direction:column; position:relative;}
+  .banner{height:30px; border-radius:6px; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 6px;}
+  .banner span{font-size:13px; font-weight:500; line-height:1.05;}
+  .art{height:96px; margin-top:6px; border-radius:6px; background:var(--panel); border:.5px solid var(--panel-edge); display:flex; align-items:center; justify-content:center; overflow:hidden;}
+  .art svg{width:150px; height:82px;}
+  .info{flex:1; margin-top:6px; border-radius:6px; background:var(--panel); border:.5px solid var(--panel-edge); padding:8px 10px; display:flex; flex-direction:column; justify-content:center;}
+  .rent-row{display:flex; justify-content:space-between; font-size:12px; line-height:1.7;}
+  .rent-row .lbl{color:var(--mist);} .rent-row .val{color:var(--foam); font-weight:500;}
+  .effect{font-size:12px; color:var(--mist); text-align:center; line-height:1.45;}
+  .denom{font-size:30px; font-weight:500; color:var(--pearl); text-align:center; line-height:1;}
+  .denom small{display:block; font-size:12px; font-weight:400; color:var(--haze); margin-top:4px;}
+  .dots{display:flex; gap:6px; justify-content:center; margin-top:7px;}
+  .dots i{width:12px; height:12px; border-radius:50%; display:block; border:.5px solid rgba(255,255,255,.25);}
+  .badge{position:absolute; left:8px; bottom:8px; display:flex; align-items:center; gap:6px;}
+  .badge .b{width:26px; height:26px; border-radius:50%; background:var(--pearl); border:.5px solid var(--gold); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:500; color:var(--pearl-dk);}
+  .badge .cap{font-size:11px; color:var(--haze);}
+  .nobank{position:absolute; left:8px; bottom:10px; font-size:11px; color:var(--haze);}
+
+  @media print{
+    body{background:#fff; padding:0;}
+    header,.sub,.bar,.section-label{display:none !important;}
+    .grid{display:grid; grid-template-columns:repeat(3,2.5in); gap:0; max-width:none; margin:0;}
+    .card{width:2.5in; height:3.5in; border-radius:0; border:1px dashed #999; break-inside:avoid; page-break-inside:avoid;}
+    @page{size:letter; margin:.4in;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Siren's Bargain — every card</h1>
+  <button class="print" onclick="window.print()">Print sheet</button>
+</header>
+<p class="sub">All 106 cards, built to the art spec. On screen this is a gallery of every card face. Printed, it lays out at real playing-card size (2.5&nbsp;&times;&nbsp;3.5&nbsp;in), 9 per page — print on cardstock, cut along the dashed lines, and you have a physical deck to playtest. Art windows show placeholder motifs; swap in real illustrations later.</p>
+<div class="bar" id="bar"></div>
+
+<div id="root"></div>
+
+<script>
+const P={ink:'#0B1D33',panel:'#14304F',edge:'#22496F',pearl:'#EDE6D4',pearlLt:'#FBF7EC',mist:'#C4D6E2',cliff:'#1F4370',foam:'#F2F6F5'};
+
+// ---- motif library : returns inner SVG for a 0 0 120 70 viewBox ----
+function M(id,c){
+  const s=(c||'#7FA8E8');
+  const g={
+    tide_pools:`<path d='M60 12 L54 28 L37 29 L51 39 L46 55 L60 46 L74 55 L69 39 L83 29 L66 28 Z' fill='${s}'/>`,
+    kelp_forest:`<path d='M42 60 Q36 38 44 16' fill='none' stroke='${s}' stroke-width='5' stroke-linecap='round'/><path d='M60 60 Q64 34 58 12' fill='none' stroke='${s}' stroke-width='5' stroke-linecap='round'/><path d='M78 60 Q72 40 80 18' fill='none' stroke='${s}' stroke-width='5' stroke-linecap='round'/>`,
+    coral_gardens:`<path d='M50 60 Q46 40 54 22' fill='none' stroke='${s}' stroke-width='5' stroke-linecap='round'/><path d='M50 40 Q40 34 36 22' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><path d='M70 60 Q72 38 66 20' fill='none' stroke='${s}' stroke-width='5' stroke-linecap='round'/><path d='M70 40 Q80 34 84 22' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/>`,
+    pearl_beds:`<path d='M35 34 Q47 20 59 34 Q47 40 35 34 Z' fill='none' stroke='${s}' stroke-width='3'/><circle cx='47' cy='33' r='4' fill='${P.pearl}'/><path d='M62 44 Q74 30 86 44 Q74 50 62 44 Z' fill='none' stroke='${s}' stroke-width='3'/><circle cx='74' cy='43' r='4' fill='${P.pearl}'/>`,
+    shipwreck_cove:`<path d='M70 58 L70 14' stroke='${s}' stroke-width='4' stroke-linecap='round'/><path d='M70 20 L44 34 L70 40 Z' fill='${s}'/><path d='M40 58 Q60 50 84 58' fill='none' stroke='${s}' stroke-width='3'/>`,
+    sunken_temple:`<rect x='40' y='26' width='7' height='30' fill='${s}'/><rect x='73' y='26' width='7' height='30' fill='${s}'/><path d='M38 26 Q60 8 82 26' fill='none' stroke='${s}' stroke-width='5'/><rect x='36' y='56' width='48' height='5' fill='${s}'/>`,
+    seagrass_lagoon:`<ellipse cx='60' cy='36' rx='16' ry='12' fill='none' stroke='${s}' stroke-width='4'/><path d='M60 24 L60 48 M48 36 L72 36' stroke='${s}' stroke-width='2'/><path d='M34 58 Q36 44 32 34 M44 58 Q46 46 42 38 M78 58 Q74 46 78 38 M88 58 Q84 44 88 34' fill='none' stroke='${s}' stroke-width='3' stroke-linecap='round'/>`,
+    abyssal_trench:`<path d='M30 14 L52 58 L60 40 L68 58 L90 14' fill='none' stroke='${s}' stroke-width='3'/><circle cx='60' cy='30' r='2.4' fill='${P.pearl}'/><circle cx='50' cy='22' r='1.8' fill='${s}'/><circle cx='72' cy='24' r='1.8' fill='${s}'/>`,
+    ocean_currents:`<path d='M28 26 Q48 14 68 26 T108 26' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><path d='M20 44 Q40 32 60 44 T100 44' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><circle cx='34' cy='58' r='2' fill='${s}'/><circle cx='86' cy='58' r='2' fill='${s}'/>`,
+    mystic_springs:`<path d='M46 60 Q54 40 60 58 Q66 40 74 60' fill='none' stroke='${s}' stroke-width='3'/><circle cx='60' cy='30' r='4' fill='none' stroke='${s}' stroke-width='2'/><circle cx='52' cy='20' r='3' fill='none' stroke='${s}' stroke-width='2'/><circle cx='70' cy='16' r='2.4' fill='none' stroke='${s}' stroke-width='2'/>`,
+    pearls:`<circle cx='48' cy='30' r='11' fill='${P.pearl}'/><circle cx='44' cy='26' r='3' fill='${P.pearlLt}'/><circle cx='72' cy='26' r='11' fill='${P.pearl}'/><circle cx='68' cy='22' r='3' fill='${P.pearlLt}'/><circle cx='60' cy='46' r='10' fill='${P.pearl}'/><circle cx='56' cy='42' r='2.6' fill='${P.pearlLt}'/>`,
+    tribute:`<path d='M22 44 Q42 30 62 44 T102 44' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><circle cx='42' cy='24' r='8' fill='${P.pearl}'/><circle cx='78' cy='22' r='8' fill='${P.pearl}'/>`,
+    krakens_grasp:`<ellipse cx='60' cy='28' rx='18' ry='14' fill='${s}'/><circle cx='54' cy='27' r='3' fill='${P.ink}'/><circle cx='66' cy='27' r='3' fill='${P.ink}'/><path d='M46 40 Q32 54 18 48 M60 42 Q60 60 48 62 M74 40 Q88 54 102 48' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/>`,
+    sirens_refusal:`<path d='M40 20 Q60 8 80 20 L80 40 Q60 56 40 40 Z' fill='none' stroke='${s}' stroke-width='3'/><path d='M52 58 L52 38 M60 60 L60 36 M68 58 L68 38' stroke='${s}' stroke-width='4' stroke-linecap='round'/>`,
+    slippery_eel:`<path d='M24 22 Q44 12 60 26 Q76 40 96 30' fill='none' stroke='${s}' stroke-width='6' stroke-linecap='round'/><circle cx='92' cy='30' r='2' fill='${P.ink}'/>`,
+    trade_winds:`<path d='M30 24 L86 24' stroke='${s}' stroke-width='3'/><path d='M78 18 L88 24 L78 30' fill='none' stroke='${s}' stroke-width='3'/><path d='M90 46 L34 46' stroke='${s}' stroke-width='3'/><path d='M42 40 L32 46 L42 52' fill='none' stroke='${s}' stroke-width='3'/>`,
+    toll_of_the_tides:`<path d='M20 46 Q40 30 60 46 T100 46' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><circle cx='46' cy='24' r='7' fill='${P.pearl}'/><circle cx='62' cy='20' r='7' fill='${P.pearl}'/><circle cx='78' cy='24' r='7' fill='${P.pearl}'/>`,
+    mermaids_feast:`<rect x='30' y='40' width='60' height='4' fill='${s}'/><path d='M40 40 Q40 30 48 30 Q56 30 56 40 Z' fill='none' stroke='${s}' stroke-width='2'/><path d='M64 40 Q64 28 72 28 Q80 28 80 40 Z' fill='none' stroke='${s}' stroke-width='2'/><circle cx='48' cy='34' r='2' fill='${P.pearl}'/><circle cx='72' cy='33' r='2' fill='${P.pearl}'/>`,
+    high_tide:`<path d='M20 48 Q40 34 60 48 T100 48' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round'/><path d='M60 40 L60 14 M50 24 L60 12 L70 24' fill='none' stroke='${s}' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/>`,
+    coral_cottage:`<path d='M38 56 L38 34 L60 18 L82 34 L82 56 Z' fill='none' stroke='${s}' stroke-width='3'/><path d='M32 36 L60 16 L88 36' fill='none' stroke='${s}' stroke-width='3'/><rect x='54' y='42' width='12' height='14' fill='${s}'/>`,
+    pearl_palace:`<path d='M30 58 L30 30 L46 30 L46 22 L60 12 L74 22 L74 30 L90 30 L90 58 Z' fill='none' stroke='${s}' stroke-width='3'/><rect x='54' y='40' width='12' height='18' fill='${s}'/><circle cx='60' cy='20' r='3' fill='${P.pearl}'/>`,
+    ride_the_current:`<path d='M40 34 L70 20 L64 34 L70 48 Z' fill='${s}'/><path d='M20 26 L36 30 M18 40 L36 38' stroke='${s}' stroke-width='3' stroke-linecap='round'/>`,
+    plus:`<path d='M60 20 L60 50 M45 35 L75 35' stroke='${s}' stroke-width='6' stroke-linecap='round'/>`,
+    conch:`<path d='M40 48 Q40 24 62 22 Q86 22 84 42 Q82 56 62 54 Q48 54 48 42 Q48 34 60 34' fill='none' stroke='${P.pearl}' stroke-width='3'/>`
+  };
+  return `<svg viewBox='0 0 120 70' xmlns='http://www.w3.org/2000/svg'>${g[id]||''}</svg>`;
+}
+
+// ---- data ----
+const REALMS=[
+  {id:'tide_pools',name:'Tide Pools',banner:'#E0C18A',ink:'#4A3413',value:1,rent:[1,2],cards:['Barnacle Shallows','Starfish Hollow']},
+  {id:'kelp_forest',name:'Kelp Forest',banner:'#7FC9B4',ink:'#0B3A2E',value:1,rent:[1,2,3],cards:['Frond Thicket',"Otter's Rest",'Emerald Canopy']},
+  {id:'coral_gardens',name:'Coral Gardens',banner:'#F09CBA',ink:'#4B1528',value:2,rent:[1,2,4],cards:['Anemone Grove','Fan Coral Ridge','Blushing Reef']},
+  {id:'pearl_beds',name:'Pearl Beds',banner:'#F4A87A',ink:'#4A1B0C',value:2,rent:[1,3,5],cards:['Oyster Shallows','Nacre Flats','Moonpearl Bank']},
+  {id:'shipwreck_cove',name:'Shipwreck Cove',banner:'#E08585',ink:'#501313',value:3,rent:[2,3,6],cards:['The Broken Keel','Rusted Galleon','Drowned Lantern']},
+  {id:'sunken_temple',name:'Sunken Temple',banner:'#EFC55E',ink:'#412402',value:3,rent:[2,4,6],cards:['Coral Colonnade','The Gilded Arch','Forgotten Altar']},
+  {id:'seagrass_lagoon',name:'Seagrass Lagoon',banner:'#9AD16C',ink:'#173404',value:4,rent:[2,4,7],cards:['Turtle Meadow','Whispering Flats','Green Tide Bay']},
+  {id:'abyssal_trench',name:'Abyssal Trench',banner:'#7FA8E8',ink:'#12224A',value:4,rent:[3,8],cards:['The Midnight Rift','Anglerfish Deep']},
+  {id:'ocean_currents',name:'Ocean Currents',banner:'#BCC9D2',ink:'#2A3944',value:2,rent:[1,2,3,4],cards:['The Warm Drift','Riptide Passage','Coldwater Run','The Whirling Gyre']},
+  {id:'mystic_springs',name:'Mystic Springs',banner:'#7FDCE8',ink:'#06363D',value:2,rent:[1,2],cards:['Glimmer Vent','The Singing Spring']}
+];
+const byId=id=>REALMS.find(r=>r.id===id);
+const WILDS=[
+  {a:'abyssal_trench',b:'seagrass_lagoon',value:4,n:1},
+  {a:'kelp_forest',b:'tide_pools',value:1,n:1},
+  {a:'coral_gardens',b:'pearl_beds',value:2,n:2},
+  {a:'seagrass_lagoon',b:'ocean_currents',value:4,n:1},
+  {a:'kelp_forest',b:'ocean_currents',value:1,n:1},
+  {a:'mystic_springs',b:'ocean_currents',value:2,n:1},
+  {a:'shipwreck_cove',b:'sunken_temple',value:3,n:2}
+];
+const PEARLS=[{v:1,n:6},{v:2,n:5},{v:3,n:3},{v:4,n:3},{v:5,n:2},{v:10,n:1}];
+const TRIBUTES=[
+  {name:'Deep Tribute',a:'abyssal_trench',b:'seagrass_lagoon',value:1,n:2,eff:'Charge all players rent on Abyssal Trench or Seagrass Lagoon'},
+  {name:'Shallow Tribute',a:'tide_pools',b:'kelp_forest',value:1,n:2,eff:'Charge all players rent on Tide Pools or Kelp Forest'},
+  {name:'Bloom Tribute',a:'coral_gardens',b:'pearl_beds',value:1,n:2,eff:'Charge all players rent on Coral Gardens or Pearl Beds'},
+  {name:'Sunken Tribute',a:'shipwreck_cove',b:'sunken_temple',value:1,n:2,eff:'Charge all players rent on Shipwreck Cove or Sunken Temple'},
+  {name:'Current Tribute',a:'ocean_currents',b:'mystic_springs',value:1,n:2,eff:'Charge all players rent on Ocean Currents or Mystic Springs'},
+  {name:"Siren's Toll",any:true,value:3,n:3,eff:'Charge one chosen player rent on any one realm'}
+];
+const ACTIONS=[
+  {name:"Kraken's Grasp",motif:'krakens_grasp',value:5,n:2,eff:'Steal a complete realm set from any player'},
+  {name:"Siren's Refusal",motif:'sirens_refusal',value:4,n:3,eff:'Cancel an action played against you'},
+  {name:'Slippery Eel',motif:'slippery_eel',value:3,n:3,eff:'Steal one loose realm card (not from a completed set)'},
+  {name:'Trade Winds',motif:'trade_winds',value:3,n:3,eff:'Swap one realm card with another player'},
+  {name:'Toll of the Tides',motif:'toll_of_the_tides',value:3,n:3,eff:'Force one player to pay you 5 Pearls'},
+  {name:"Mermaid's Feast",motif:'mermaids_feast',value:2,n:3,eff:'Every player pays you 2 Pearls'},
+  {name:'High Tide',motif:'high_tide',value:1,n:2,eff:'Doubles your next Tribute (play with a Tribute)'},
+  {name:'Coral Cottage',motif:'coral_cottage',value:3,n:3,eff:'Add to a completed realm to raise its rent'},
+  {name:'Pearl Palace',motif:'pearl_palace',value:4,n:2,eff:'Stack on a Coral Cottage for even higher rent'},
+  {name:'Ride the Current',motif:'ride_the_current',value:1,n:10,eff:'Draw 2 extra cards'}
+];
+
+// ---- card builders ----
+function bankBadge(v){return `<div class='badge'><div class='b'>${v}</div><div class='cap'>to bank</div></div>`;}
+
+function realmCard(r,name){
+  const rows=r.rent.map((v,i)=>`<div class='rent-row'><span class='lbl'>${i+1} card${i?'s':''}</span><span class='val'>${v}</span></div>`).join('');
+  return `<div class='card'>
+    <div class='banner' style='background:${r.banner}'><span style='color:${r.ink}'>${name}</span></div>
+    <div class='art'>${M(r.id,r.banner)}</div>
+    <div class='info'>${rows}</div>
+    ${bankBadge(r.value)}
+  </div>`;
+}
+function wildCard(w){
+  const A=byId(w.a),B=byId(w.b);
+  return `<div class='card'>
+    <div class='banner' style='background:linear-gradient(115deg,${A.banner} 0 50%,${B.banner} 50% 100%)'><span style='color:${P.ink};background:rgba(255,255,255,.7);border-radius:4px;padding:1px 5px'>Wild Realm</span></div>
+    <div class='art'>${M('plus','#EDE6D4')}</div>
+    <div class='info'><div class='effect'>Counts as<br><b>${A.name}</b><br>or<br><b>${B.name}</b></div></div>
+    ${bankBadge(w.value)}
+  </div>`;
+}
+function conchCard(){
+  return `<div class='card'>
+    <div class='banner' style='background:linear-gradient(90deg,#F09CBA,#EFC55E,#9AD16C,#7FA8E8,#7FDCE8)'><span style='color:${P.ink};background:rgba(255,255,255,.75);border-radius:4px;padding:1px 6px'>Rainbow Conch</span></div>
+    <div class='art'>${M('conch')}</div>
+    <div class='info'><div class='effect'>Counts as <b>any realm</b>.<br>Cannot be banked as Pearls.</div></div>
+    <div class='nobank'>never banked</div>
+  </div>`;
+}
+function pearlCard(v){
+  return `<div class='card'>
+    <div class='banner' style='background:${P.pearl}'><span style='color:${P.pearlDk||'#3B2E12'}'>Pearls</span></div>
+    <div class='art'>${M('pearls')}</div>
+    <div class='info'><div class='denom'>${v}<small>${v===1?'pearl':'pearls'}</small></div></div>
+    ${bankBadge(v)}
+  </div>`;
+}
+function tributeCard(t){
+  let dots='';
+  if(!t.any){const A=byId(t.a),B=byId(t.b);dots=`<div class='dots'><i style='background:${A.banner}'></i><i style='background:${B.banner}'></i></div>`;}
+  else{dots=`<div class='dots'><i style='background:linear-gradient(90deg,#F09CBA,#7FA8E8)'></i></div>`;}
+  return `<div class='card'>
+    <div class='banner' style='background:#EFC55E'><span style='color:#412402'>${t.name}</span></div>
+    <div class='art'>${M('tribute','#EFC55E')}</div>
+    <div class='info'><div class='effect'>${t.eff}</div>${dots}</div>
+    ${bankBadge(t.value)}
+  </div>`;
+}
+function actionCard(a){
+  return `<div class='card'>
+    <div class='banner' style='background:#A79EE8'><span style='color:#26215C'>${a.name}</span></div>
+    <div class='art'>${M(a.motif,'#A79EE8')}</div>
+    <div class='info'><div class='effect'>${a.eff}</div></div>
+    ${bankBadge(a.value)}
+  </div>`;
+}
+
+// ---- render ----
+function section(label,cards){
+  const lbl=document.createElement('div'); lbl.className='section-label'; lbl.textContent=label;
+  const grid=document.createElement('div'); grid.className='grid'; grid.innerHTML=cards.join('');
+  document.getElementById('root').appendChild(lbl);
+  document.getElementById('root').appendChild(grid);
+}
+let total=0;
+const realmCards=[]; REALMS.forEach(r=>r.cards.forEach(n=>realmCards.push(realmCard(r,n))));
+total+=realmCards.length; section(`Realm cards — ${realmCards.length}`,realmCards);
+
+const wildCards=[]; WILDS.forEach(w=>{for(let i=0;i<w.n;i++)wildCards.push(wildCard(w));}); wildCards.push(conchCard(),conchCard());
+total+=wildCards.length; section(`Wild realm cards — ${wildCards.length}`,wildCards);
+
+const pearlCards=[]; PEARLS.forEach(p=>{for(let i=0;i<p.n;i++)pearlCards.push(pearlCard(p.v));});
+total+=pearlCards.length; section(`Pearl (money) cards — ${pearlCards.length}`,pearlCards);
+
+const tribCards=[]; TRIBUTES.forEach(t=>{for(let i=0;i<t.n;i++)tribCards.push(tributeCard(t));});
+total+=tribCards.length; section(`Tribute (rent) cards — ${tribCards.length}`,tribCards);
+
+const actCards=[]; ACTIONS.forEach(a=>{for(let i=0;i<a.n;i++)actCards.push(actionCard(a));});
+total+=actCards.length; section(`Action cards — ${actCards.length}`,actCards);
+
+document.getElementById('bar').innerHTML=`<span class='count-pill'>${total} cards total</span><span class='count-pill'>${realmCards.length} realm</span><span class='count-pill'>${wildCards.length} wild</span><span class='count-pill'>${pearlCards.length} pearl</span><span class='count-pill'>${tribCards.length} tribute</span><span class='count-pill'>${actCards.length} action</span>`;
+</script>
+</body>
+</html>

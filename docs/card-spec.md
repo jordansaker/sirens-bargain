@@ -9,13 +9,7 @@ Breakdown: 28 Realm (property) cards · 11 Wild Realm cards · 20 Pearl (money) 
 ---
 
 ## Core Goal
-Be the first to complete a target number of full ocean realms (property sets) laid out in front of you.
-
-**Sets to win by player count:**
-- 2 players: **4 completed realms**
-- 3+ players: **3 completed realms**
-
-The higher target in a 2-player match keeps duels from ending too quickly — with fewer opponents to slow you down, 3 sets falls too fast.
+Be the first to complete **3 full ocean realms** (property sets) laid out in front of you.
 
 ---
 
@@ -35,7 +29,24 @@ Each realm is a color group. Rent rises as you collect more of the set. Play the
 | **Ocean Currents** | Silver | 2 | 4 | 4 | 1 / 2 / 3 / 4 |
 | **Mystic Springs** | Aqua glow | 2 | 2 | 2 | 1 / 2 |
 
-*Flavor name ideas for individual cards within a realm, e.g. Coral Gardens: "Anemone Grove," "Brain Coral Ridge," "Fan Coral Shallows."*
+### Individual card names within each realm
+
+Each realm's property cards get their own place-names. Cheaper realms feel small and gentle; pricier ones feel grand and mysterious.
+
+| Realm | Card names |
+|---|---|
+| Tide Pools (2) | Barnacle Shallows · Starfish Hollow |
+| Kelp Forest (3) | Frond Thicket · Otter's Rest · Emerald Canopy |
+| Coral Gardens (3) | Anemone Grove · Fan Coral Ridge · Blushing Reef |
+| Pearl Beds (3) | Oyster Shallows · Nacre Flats · Moonpearl Bank |
+| Shipwreck Cove (3) | The Broken Keel · Rusted Galleon · Drowned Lantern |
+| Sunken Temple (3) | Coral Colonnade · The Gilded Arch · Forgotten Altar |
+| Seagrass Lagoon (3) | Turtle Meadow · Whispering Flats · Green Tide Bay |
+| Abyssal Trench (2) | The Midnight Rift · Anglerfish Deep |
+| Ocean Currents (4) | The Warm Drift · Riptide Passage · Coldwater Run · The Whirling Gyre |
+| Mystic Springs (2) | Glimmer Vent · The Singing Spring |
+
+*Ocean Currents names all evoke movement, since it's the four-of-a-kind set. Real geographic names are deliberately avoided to keep everything original.*
 
 ---
 
@@ -105,7 +116,7 @@ Play for effect, or bank any of them for their Pearl value instead.
 1. **Draw 2 cards** at the start of your turn (draw 5 if your hand is empty).
 2. **Play up to 3 cards**: bank Pearls, lay down realms, or play actions.
 3. **Discard** down to 7 cards in hand if over the limit.
-4. Win the instant you have the target number of completed realms in front of you (**4** in a 2-player match, **3** with 3+ players).
+4. Win the instant you have **3 completed realms** in front of you.
 
 ## Payment Rule
 When you owe Pearls, pay from your bank and/or laid-down realm cards. If you can't cover it, you pay what you have — no change is given. Nobody owes from an empty bank if they have nothing.

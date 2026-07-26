@@ -13,11 +13,11 @@ extends PanelContainer
 
 signal selected(card: CardData)
 
-const WIDTH := 62
-const HEIGHT := 88
-const LIFT_PX := 12
+const WIDTH := 90
+const HEIGHT := 126
+const LIFT_PX := 16
 
-const BANNER_HEIGHT := 16
+const BANNER_HEIGHT := 20
 
 var card: CardData:
 	set(value):
@@ -72,18 +72,18 @@ func _build_children() -> void:
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_title_label.add_theme_font_size_override("font_size", 10)
+	_title_label.add_theme_font_size_override("font_size", 12)
 	_title_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(_title_label)
 
 	_value_label = Label.new()
 	_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_value_label.add_theme_font_size_override("font_size", 10)
+	_value_label.add_theme_font_size_override("font_size", 11)
 	body.add_child(_value_label)
 
 	_hint_label = Label.new()
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint_label.add_theme_font_size_override("font_size", 9)
+	_hint_label.add_theme_font_size_override("font_size", 10)
 	_hint_label.visible = false
 	body.add_child(_hint_label)
 

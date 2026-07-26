@@ -1123,13 +1123,13 @@ func _tribute_pick_target(charger_realm: String) -> void:
 	_hide_menu()
 	_ctx["tribute_realm"] = charger_realm
 	if _selected_card.realms.is_empty():
-		# Siren's Toll — needs a chosen target. Use a lambda closing over
-		# charger_realm so _prompt_opponent_pick's .bind(p.id) lands as the
-		# lambda's single argument, in the right position.
+		# Siren's Toll — needs a chosen target. The lambda awaits the coroutine
+		# chain so a paused _do_tribute (e.g. an HvH refusal modal) doesn't
+		# leave the tribute in limbo.
 		_prompt_opponent_pick("Siren's Toll — target?",
-			func(target_id: int): _tribute_maybe_high_tide(charger_realm, target_id))
+			func(target_id: int): await _tribute_maybe_high_tide(charger_realm, target_id))
 	else:
-		_tribute_maybe_high_tide(charger_realm, -1)
+		await _tribute_maybe_high_tide(charger_realm, -1)
 
 # After realm + optional target are chosen, offer to stack a High Tide onto
 # the tribute — but only if the player has one in hand AND has a spare play
@@ -1145,7 +1145,7 @@ func _tribute_maybe_high_tide(charger_realm: String, target_id: int) -> void:
 	# High Tide is free (rides along with the tribute), so no extra-play
 	# check needed — offer it whenever the player holds one.
 	if high_tide == null:
-		_do_tribute(charger_realm, target_id, null)
+		await _do_tribute(charger_realm, target_id, null)
 		return
 	var base_rent := RentCalculator.rent(human, charger_realm, false)
 	var high_tide_rent := RentCalculator.rent(human, charger_realm, true)
@@ -1164,6 +1164,10 @@ func _tribute_maybe_high_tide(charger_realm: String, target_id: int) -> void:
 func _do_tribute(charger_realm: String, target_id: int = -1, high_tide: CardData = null) -> void:
 	_hide_menu()
 	if _selected_card == null:
+		# Belt-and-suspenders — nothing selected shouldn't reach here, but if
+		# it does we must reset state so the UI isn't stuck in
+		# SELECT_OWN_REALM_FOR_CHARGE / SELECT_OPP_PLAYER.
+		_reset_to_idle()
 		return
 	var pending := _tm.initiate_tribute(_selected_card, charger_realm, target_id, high_tide)
 	if pending == null:
