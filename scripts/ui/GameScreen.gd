@@ -36,9 +36,12 @@ enum InteractionState {
 	GAME_OVER,
 }
 
-const HUMAN_ID := 0
-const OPPONENT_NAME := "Coral"
+# These are locked constants in vs-AI mode. In online play HUMAN_ID becomes
+# the local peer id (0 for host, 1 for guest) and OPPONENT_NAME becomes the
+# other peer's label — kept as vars so every existing reference just works.
 const HUMAN_NAME := "You"
+var HUMAN_ID: int = 0
+var OPPONENT_NAME: String = "Coral"
 
 @onready var _turn_label: Label = %TurnLabel
 @onready var _plays_label: Label = %PlaysLabel
@@ -51,6 +54,7 @@ const HUMAN_NAME := "You"
 @onready var _log_scroll: ScrollContainer = %LogScroll
 @onready var _log_list: VBoxContainer = %LogList
 @onready var _turn_banner: Label = %TurnBanner
+@onready var _to_menu_button: Button = %ToMenuButton
 @onready var _game_over_scrim: ColorRect = %GameOverScrim
 @onready var _game_over_panel: Panel = %GameOverPanel
 @onready var _game_over_title: Label = %GameOverTitle
@@ -100,8 +104,13 @@ var _card_peek_art: TextureRect = null
 
 var _gs: GameState
 var _tm: TurnManager
-var _ais: Dictionary = {}     # id -> AIOpponent (opponents only)
+var _ais: Dictionary = {}     # id -> AIOpponent (opponents only; empty when online)
 var _sfx: SoundEffects = null
+
+# Online-play plumbing. Null in vs-AI mode.
+var _net_client: NetworkClient = null
+var _is_online: bool = false
+var _waiting_for_deck_init: bool = false
 
 var _state: int = InteractionState.IDLE
 var _selected_card: CardData = null
@@ -109,6 +118,13 @@ var _ctx: Dictionary = {}      # scratchpad for multi-step target picks
 var _pending_discards: Array[CardData] = []
 
 func _ready() -> void:
+	# Grab the online session first so _setup_game can branch on host/guest.
+	var ns := get_tree().root.get_node_or_null("NetSession")
+	if ns != null and ns.has_method("has_active_client") and ns.has_active_client():
+		_is_online = true
+		_net_client = ns.client
+		HUMAN_ID = ns.local_player_id
+		OPPONENT_NAME = "Player 2" if HUMAN_ID == 0 else "Player 1"
 	_setup_game()
 	_configure_boards()
 	_setup_sound()
@@ -119,7 +135,10 @@ func _ready() -> void:
 	_hide_card_peek()
 	_hide_game_over()
 	_hide_refusal_modal()
-	_start_human_turn()
+	if _waiting_for_deck_init:
+		_prompt("Waiting for host to deal…")
+	else:
+		_start_human_turn()
 
 func _setup_sound() -> void:
 	_sfx = SoundEffects.new()
@@ -128,6 +147,14 @@ func _setup_sound() -> void:
 # --- Game setup ----------------------------------------------------------
 
 func _setup_game() -> void:
+	# Host (or offline) creates and deals the deck locally.
+	# Guest opens an empty state and waits for a deck_init event before dealing.
+	if _is_online and HUMAN_ID != 0:
+		_gs = GameState.new(2, [] as Array[CardData], 0)
+		_tm = TurnManager.new(_gs)
+		_waiting_for_deck_init = true
+		return
+
 	var deck := DeckBuilder.build_deck()
 	var seed_value: int = Time.get_ticks_usec()
 	_gs = GameState.new(2, deck, seed_value)
@@ -138,7 +165,13 @@ func _setup_game() -> void:
 			var c := _gs.draw_card()
 			if c != null:
 				p.hand.append(c)
-	_ais[1] = AIOpponent.new(1)
+	if _is_online:
+		# Host: broadcast the just-dealt state so the guest starts from the
+		# same position. Sent once, immediately after setup.
+		_net_client.send(NetProtocol.build_deck_init(_gs, seed_value))
+	else:
+		# Vs-AI mode: the opponent seat is an AIOpponent.
+		_ais[1] = AIOpponent.new(1)
 
 func _shuffle_draw_pile() -> void:
 	var arr: Array[CardData] = _gs.draw_pile
@@ -160,6 +193,11 @@ func _wire_signals() -> void:
 	_end_turn_button.pressed.connect(_on_end_turn_pressed)
 	_menu_cancel.pressed.connect(_on_menu_cancel_pressed)
 	_peek_close.pressed.connect(_hide_peek)
+	_to_menu_button.pressed.connect(_on_to_menu_pressed)
+	if _net_client != null:
+		_net_client.event_received.connect(_on_net_event)
+		_net_client.opponent_left.connect(_on_opponent_left)
+		_net_client.disconnected.connect(_on_opponent_left)
 	_card_peek_bank.pressed.connect(_on_card_peek_bank_pressed)
 	_card_peek_play.pressed.connect(_on_card_peek_play_pressed)
 	_card_peek_close.pressed.connect(_hide_card_peek)
@@ -195,8 +233,7 @@ func _end_human_turn() -> void:
 	if over > 0:
 		_begin_discard(over)
 		return
-	_tm.end_turn([])
-	_run_ai_turns()
+	_do_end_turn([] as Array[CardData])
 
 func _begin_discard(count: int) -> void:
 	_state = InteractionState.DISCARD
@@ -206,9 +243,160 @@ func _begin_discard(count: int) -> void:
 	_refresh_all()
 
 func _finish_discard() -> void:
-	_tm.end_turn(_pending_discards)
+	_do_end_turn(_pending_discards)
 	_pending_discards.clear()
-	_run_ai_turns()
+
+# Shared "end my turn" — mutates local state, and in online mode broadcasts
+# the discards so the opponent's GameState stays in sync.
+func _do_end_turn(discards: Array[CardData]) -> void:
+	if _is_online:
+		var ids: Array = []
+		for c in discards:
+			ids.append(c.id)
+		_net_client.send({
+			"kind": NetProtocol.KIND_END_TURN,
+			"actor": HUMAN_ID,
+			"discard_ids": ids,
+		})
+	_tm.end_turn(discards)
+	if _is_online:
+		_after_turn_transition()
+	else:
+		_run_ai_turns()
+
+# After a turn ends (local or remote), hand off to whoever is now current.
+func _after_turn_transition() -> void:
+	if _gs.is_game_over():
+		_show_game_over()
+		return
+	if _gs.current_player_index == HUMAN_ID:
+		_start_human_turn()
+	else:
+		_await_opponent_turn()
+
+func _await_opponent_turn() -> void:
+	_state = InteractionState.AI_TURN
+	_selected_card = null
+	_refresh_all()
+	_flash_turn_banner("%s's turn" % OPPONENT_NAME)
+	_prompt("Waiting for %s…" % OPPONENT_NAME)
+
+# --- Networked play sync ------------------------------------------------
+
+func _on_to_menu_pressed() -> void:
+	# Bail to the main menu mid-match. Online sessions get torn down so the
+	# other peer sees a proper disconnect.
+	var ns := get_tree().root.get_node_or_null("NetSession")
+	if ns != null and ns.has_method("reset"):
+		ns.reset()
+	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+func _on_opponent_left() -> void:
+	_prompt("Opponent disconnected — heading back to the menu.")
+	_state = InteractionState.GAME_OVER
+	_refresh_all()
+	await get_tree().create_timer(2.0).timeout
+	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
+
+func _on_net_event(payload: Dictionary) -> void:
+	var kind: String = String(payload.get("kind", ""))
+	match kind:
+		NetProtocol.KIND_DECK_INIT:
+			_apply_deck_init(payload)
+		NetProtocol.KIND_END_TURN:
+			_apply_end_turn(payload)
+		NetProtocol.KIND_BANK:
+			_apply_bank(payload)
+		NetProtocol.KIND_PLAY_REALM:
+			_apply_play_realm(payload)
+		NetProtocol.KIND_PLAY_RIDE:
+			_apply_play_ride(payload)
+		NetProtocol.KIND_PLAY_COTTAGE:
+			_apply_attach_modifier(payload, true)
+		NetProtocol.KIND_PLAY_PALACE:
+			_apply_attach_modifier(payload, false)
+		NetProtocol.KIND_REASSIGN_WILD:
+			_apply_reassign_wild(payload)
+		_:
+			# Unknown event — log for debugging.
+			_append_log("[color=#e88][unknown event %s][/color]" % kind)
+
+# Guest applies the host's initial deal, then hooks into the turn loop.
+func _apply_deck_init(payload: Dictionary) -> void:
+	_gs = NetProtocol.apply_deck_init(payload)
+	_tm = TurnManager.new(_gs)
+	_waiting_for_deck_init = false
+	# Re-connect play_logged since the TurnManager instance changed.
+	_tm.play_logged.connect(_on_play_logged)
+	_configure_boards()
+	_refresh_all()
+	if _gs.current_player_index == HUMAN_ID:
+		_start_human_turn()
+	else:
+		_await_opponent_turn()
+
+func _apply_end_turn(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	if actor < 0:
+		return
+	var player := _gs.players[actor]
+	var discard_ids: Array = payload.get("discard_ids", [])
+	var discards: Array[CardData] = []
+	for id in discard_ids:
+		var c := NetProtocol.find_in_hand(player, String(id))
+		if c != null:
+			discards.append(c)
+	_tm.end_turn(discards)
+	_after_turn_transition()
+
+func _apply_bank(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], String(payload.get("card_id", "")))
+	if card == null:
+		return
+	_tm.bank_card(card)
+	_refresh_all()
+
+func _apply_play_realm(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], String(payload.get("card_id", "")))
+	if card == null:
+		return
+	_tm.play_realm(card, String(payload.get("realm", "")))
+	_refresh_all()
+
+func _apply_play_ride(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], String(payload.get("card_id", "")))
+	if card == null:
+		return
+	_tm.play_ride_the_current(card)
+	_refresh_all()
+
+func _apply_attach_modifier(payload: Dictionary, is_cottage: bool) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], String(payload.get("card_id", "")))
+	if card == null:
+		return
+	var realm := String(payload.get("realm", ""))
+	if is_cottage:
+		_tm.play_coral_cottage(card, realm)
+	else:
+		_tm.play_pearl_palace(card, realm)
+	_refresh_all()
+
+func _apply_reassign_wild(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	var card := NetProtocol.find_in_realms(_gs.players[actor], String(payload.get("card_id", "")))
+	if card == null:
+		return
+	_gs.players[actor].reassign_wild(card, String(payload.get("from", "")), String(payload.get("to", "")))
+	_refresh_all()
+
+# Broadcast a local action to the opponent (no-op in vs-AI mode).
+func _broadcast(payload: Dictionary) -> void:
+	if _net_client != null:
+		_net_client.send(payload)
 
 const AI_PLAY_DELAY := 0.7  # seconds between AI plays so the player can follow
 
@@ -758,14 +946,34 @@ func _place_realm(target_realm: String) -> void:
 		return
 	if _tm.play_realm(card, target_realm):
 		_prompt("Played %s in %s." % [card.name, target_realm])
+		_broadcast({
+			"kind": NetProtocol.KIND_PLAY_REALM,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"realm": target_realm,
+		})
 	_selected_card = null
 	_reset_to_idle()
 
 func _begin_play_action(card: CardData) -> void:
+	# Online-mode gating: refusable actions require the network refusal
+	# protocol which is not yet wired. Block those with a clear prompt so
+	# the player doesn't stall on an unresponsive card.
+	if _is_online and card.action_effect in [
+			"mermaids_feast", "toll_of_the_tides", "krakens_grasp",
+			"slippery_eel", "trade_winds"]:
+		_prompt("Refusable actions aren't wired for online yet — bank or hold.")
+		_reset_to_idle()
+		return
 	match card.action_effect:
 		"ride_the_current":
 			if _tm.play_ride_the_current(card):
 				_prompt("Rode the Current — drew 2.")
+				_broadcast({
+					"kind": NetProtocol.KIND_PLAY_RIDE,
+					"actor": HUMAN_ID,
+					"card_id": card.id,
+				})
 			_reset_to_idle()
 		"mermaids_feast":
 			var pending := _tm.initiate_mermaids_feast(card)
@@ -1061,8 +1269,15 @@ func _do_cottage(realm: String) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	if _tm.play_coral_cottage(_selected_card, realm):
+	var card := _selected_card
+	if _tm.play_coral_cottage(card, realm):
 		_prompt("Cottage on %s." % realm)
+		_broadcast({
+			"kind": NetProtocol.KIND_PLAY_COTTAGE,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"realm": realm,
+		})
 	_reset_to_idle()
 
 func _begin_palace() -> void:
@@ -1083,8 +1298,15 @@ func _do_palace(realm: String) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	if _tm.play_pearl_palace(_selected_card, realm):
+	var card := _selected_card
+	if _tm.play_pearl_palace(card, realm):
 		_prompt("Palace on %s." % realm)
+		_broadcast({
+			"kind": NetProtocol.KIND_PLAY_PALACE,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"realm": realm,
+		})
 	_reset_to_idle()
 
 func _apply_modifier(realm_name: String) -> void:
@@ -1097,6 +1319,10 @@ func _apply_modifier(realm_name: String) -> void:
 
 func _begin_play_tribute() -> void:
 	if _selected_card == null:
+		return
+	if _is_online:
+		_prompt("Tributes aren't wired for online yet — bank or hold.")
+		_reset_to_idle()
 		return
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	var eligible: Array[String] = []
@@ -1130,8 +1356,14 @@ func _do_bank() -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	if _tm.bank_card(_selected_card):
-		_prompt("Banked %s." % _selected_card.name)
+	var card := _selected_card
+	if _tm.bank_card(card):
+		_prompt("Banked %s." % card.name)
+		_broadcast({
+			"kind": NetProtocol.KIND_BANK,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+		})
 	_selected_card = null
 	_reset_to_idle()
 
@@ -1446,6 +1678,13 @@ func _do_wild_shift(card: CardData, from_realm: String, to_realm: String) -> voi
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	human.reassign_wild(card, from_realm, to_realm)
 	_prompt("%s moved: %s → %s." % [card.name, from_realm, to_realm])
+	_broadcast({
+		"kind": NetProtocol.KIND_REASSIGN_WILD,
+		"actor": HUMAN_ID,
+		"card_id": card.id,
+		"from": from_realm,
+		"to": to_realm,
+	})
 	# State stays IDLE — reassigning a wild is free. Refresh boards, then
 	# reopen the peek on the destination so the player sees where it landed.
 	_refresh_all()
