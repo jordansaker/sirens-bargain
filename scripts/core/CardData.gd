@@ -25,7 +25,12 @@ func is_rainbow_conch() -> bool:
 	return id.begins_with("wild_rainbow_conch")
 
 func can_bank() -> bool:
-	return not is_rainbow_conch()
+	# Realm and wild-realm cards can NEVER be banked. Their pearl value only
+	# exists to price them when they're paid to satisfy a debt — the bank
+	# holds pearls, tributes, and actions.
+	if type == Type.REALM or type == Type.WILD_REALM:
+		return false
+	return true
 
 func can_be_assigned_to(target_realm: String) -> bool:
 	match type:

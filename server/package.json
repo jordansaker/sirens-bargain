@@ -1,0 +1,16 @@
+{
+  "name": "sirens-bargain-relay",
+  "version": "0.1.0",
+  "description": "Two-peer WebSocket relay for Siren's Bargain online PvP.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

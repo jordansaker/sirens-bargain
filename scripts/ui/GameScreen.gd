@@ -45,6 +45,7 @@ const HUMAN_NAME := "You"
 @onready var _discard_label: Label = %DiscardLabel
 @onready var _discard_top_banner: ColorRect = %DiscardTopBanner
 @onready var _discard_top_label: Label = %DiscardTopLabel
+@onready var _discard_art: TextureRect = %DiscardArt
 @onready var _draw_label: Label = %DrawLabel
 @onready var _prompt_label: Label = %PromptLabel
 @onready var _log_scroll: ScrollContainer = %LogScroll
@@ -406,20 +407,35 @@ func _refresh_mid_table() -> void:
 		_plays_label.text = "%d plays left" % max(0, TurnManager.MAX_PLAYS - _tm.plays_this_turn)
 	_draw_label.text = "%d" % _gs.draw_pile.size()
 	_discard_label.text = "%d" % _gs.discard_pile.size()
-	# Top-of-discard indicator: the last card discarded (usually an action or
-	# tribute — realms lay on boards, not the discard pile). Empty pile hides.
+	# Top-of-discard: show the actual card art if the top card has one,
+	# otherwise fall back to the coloured banner + short-name placeholder.
+	# Realms lay on boards (not discard) so the top is usually an action /
+	# tribute — the packed art for those is what the player recognises.
 	if _gs.discard_pile.is_empty():
-		_discard_top_banner.color = CardColors.INK
-		_discard_top_label.text = ""
+		_discard_art.texture = null
+		_discard_art.visible = false
+		_discard_top_banner.visible = false
+		_discard_top_label.visible = false
 	else:
 		var top: CardData = _gs.discard_pile[_gs.discard_pile.size() - 1]
-		_discard_top_banner.color = CardColors.for_card(top)
-		var display := top.name
-		if top.type == CardData.Type.ACTION:
-			var short := CardView._short_action_name(top.action_effect)
-			if not short.is_empty():
-				display = short
-		_discard_top_label.text = display
+		var tex := CardView._load_card_art(top.art_path)
+		if tex != null:
+			_discard_art.texture = tex
+			_discard_art.visible = true
+			_discard_top_banner.visible = false
+			_discard_top_label.visible = false
+		else:
+			_discard_art.texture = null
+			_discard_art.visible = false
+			_discard_top_banner.visible = true
+			_discard_top_banner.color = CardColors.for_card(top)
+			var display := top.name
+			if top.type == CardData.Type.ACTION:
+				var short := CardView._short_action_name(top.action_effect)
+				if not short.is_empty():
+					display = short
+			_discard_top_label.text = display
+			_discard_top_label.visible = true
 
 func _refresh_hand() -> void:
 	for child in _hand_row.get_children():
@@ -1097,10 +1113,16 @@ func _begin_play_tribute() -> void:
 	if eligible.size() == 1:
 		await _tribute_pick_target(eligible[0])
 		return
-	# Multiple eligible realms — tap the chip on your own strip. Colour +
-	# progress count on the chip make the choice obvious; no name menu needed.
+	# Multiple eligible realms — show a colour-coded menu AND accept chip
+	# taps. The menu makes the flow obvious (previously chip-only left the
+	# player stuck if they missed the prompt), while the chip route stays as
+	# a shortcut.
 	_state = InteractionState.SELECT_OWN_REALM_FOR_CHARGE
-	_prompt("Tap your realm to charge from.")
+	_prompt("Pick the realm to charge from (menu or tap the chip).")
+	var opts: Array = []
+	for r in eligible:
+		opts.append({"label": r, "cb": Callable(self, "_tribute_pick_target").bind(r)})
+	_show_menu("Charge tribute from your…", opts)
 
 # --- Bank action (button + tribute-no-realm confirmation) ----------------
 
@@ -1263,6 +1285,11 @@ func _show_menu(title: String, options: Array) -> void:
 		var b := Button.new()
 		b.text = opt["label"]
 		b.custom_minimum_size = Vector2(0, 48)
+		# Colour-code buttons whose label is a realm name so the player can
+		# associate names with the coloured chips on the strips. Non-realm
+		# labels (e.g. "Charge N ◈", "Bank it") get the default styling.
+		if CardColors.REALM.has(opt["label"]):
+			_style_button_as_realm(b, opt["label"])
 		var cb: Callable = opt["cb"]
 		if cb.is_valid():
 			# Await the callable — several menu callbacks are coroutines
@@ -1281,6 +1308,36 @@ func _show_menu(title: String, options: Array) -> void:
 func _hide_menu() -> void:
 	if _menu_root != null:
 		_menu_root.visible = false
+
+# Paint a menu button in the realm's chip colour so realm-name buttons match
+# the coloured chips on the boards.
+func _style_button_as_realm(b: Button, realm_name: String) -> void:
+	var bg: Color = CardColors.REALM.get(realm_name, CardColors.PANEL_EDGE)
+	var hover_bg := bg.lightened(0.10)
+	var pressed_bg := bg.darkened(0.15)
+	for state_name in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var sb := StyleBoxFlat.new()
+		match state_name:
+			"hover":  sb.bg_color = hover_bg
+			"pressed": sb.bg_color = pressed_bg
+			_: sb.bg_color = bg
+		sb.border_color = CardColors.PANEL_EDGE
+		sb.border_width_left = 1
+		sb.border_width_right = 1
+		sb.border_width_top = 1
+		sb.border_width_bottom = 1
+		sb.corner_radius_top_left = 6
+		sb.corner_radius_top_right = 6
+		sb.corner_radius_bottom_left = 6
+		sb.corner_radius_bottom_right = 6
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 8
+		b.add_theme_stylebox_override(state_name, sb)
+	b.add_theme_color_override("font_color", CardColors.text_on(bg))
+	b.add_theme_color_override("font_hover_color", CardColors.text_on(bg))
+	b.add_theme_color_override("font_pressed_color", CardColors.text_on(bg))
 
 # --- Realm peek overlay --------------------------------------------------
 
@@ -1549,11 +1606,11 @@ static func _card_subtype_text(c: CardData) -> String:
 static func _card_description(c: CardData) -> String:
 	match c.type:
 		CardData.Type.REALM:
-			return "Play into %s to build your set. Complete sets win the game (4 in a 2-player match)." % c.realm
+			return "Play into %s to build your set. Complete sets win the game (4 in a 2-player match). Can't be banked — its pearl value only prices it if it's paid to satisfy a debt." % c.realm
 		CardData.Type.WILD_REALM:
 			if c.is_rainbow_conch():
 				return "Plays into any realm. Cannot be banked as pearls, and can't be taken by Slippery Eel or Trade Winds. On your turn you can shift it freely between realms — free action."
-			return "Plays into either %s. On your turn you can shift it between the two realms — free action." % " or ".join(c.realms)
+			return "Plays into either %s. On your turn you can shift it between the two realms — free action. Can't be banked." % " or ".join(c.realms)
 		CardData.Type.PEARL:
 			return "Bank it to pay tributes and other players' actions. Pearls can only be banked, not played."
 		CardData.Type.TRIBUTE:
@@ -1580,17 +1637,19 @@ static func _action_description(effect: String) -> String:
 
 static func _card_info_text(c: CardData) -> String:
 	# Info-box footer: rent tiers for realms/wilds, otherwise the bank value.
+	# Realm/wild cards can NEVER be banked — their pearl value only prices
+	# them when they're used to pay a debt.
 	var lines: Array[String] = []
 	match c.type:
 		CardData.Type.REALM:
 			var tiers: Array = Realms.RENT_TIERS.get(c.realm, [])
 			lines.append("Rent by set size: " + _format_tiers(tiers))
-			lines.append("Set size: %d · Bank value: %d ◈" % [Realms.size_of(c.realm), c.value])
+			lines.append("Set size: %d · Worth %d ◈ toward a debt (can't be banked)" % [Realms.size_of(c.realm), c.value])
 		CardData.Type.WILD_REALM:
 			if c.is_rainbow_conch():
-				lines.append("Cannot be banked.")
+				lines.append("Can't be banked or paid — a wild placeholder only.")
 			else:
-				lines.append("Bank value: %d ◈" % c.value)
+				lines.append("Worth %d ◈ toward a debt (can't be banked)" % c.value)
 		CardData.Type.PEARL:
 			lines.append("%d pearls to bank" % c.value)
 		CardData.Type.TRIBUTE:

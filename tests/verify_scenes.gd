@@ -11,6 +11,7 @@ func _init() -> void:
 		"res://scenes/MainMenu.tscn",
 		"res://scenes/HowToPlay.tscn",
 		"res://scenes/GameScreen.tscn",
+		"res://scenes/LobbyScreen.tscn",
 	]
 	var ok := true
 	for path in scenes:

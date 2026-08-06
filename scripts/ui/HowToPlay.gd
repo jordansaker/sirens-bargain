@@ -19,9 +19,9 @@ Complete [b]4 realms[/b] (in a 2-player match) to win. A realm is complete when 
 • Discard down to [b]7[/b] cards in hand if you're over.
 
 [color=#EDE6D4][b]Card types[/b][/color]
-• [b]Realm[/b] cards belong to one realm. Play them face-up into your set.
-• [b]Wild[/b] cards stand in for a realm. You can shift them between their realms on your turn — free, doesn't cost a play.
-• [b]Rainbow Conch[/b] is a wild for [i]any[/i] realm. Cannot be banked as pearls, and cannot be stolen by Slippery Eel or Trade Winds.
+• [b]Realm[/b] cards belong to one realm. Play them face-up into your set. Cannot be banked — the pearl value on a realm only prices it if it's paid to satisfy a debt.
+• [b]Wild[/b] cards stand in for a realm. You can shift them between their realms on your turn — free, doesn't cost a play. Also can't be banked.
+• [b]Rainbow Conch[/b] is a wild for [i]any[/i] realm. Cannot be banked, and cannot be stolen by Slippery Eel or Trade Winds.
 • [b]Pearls[/b] are money. Bank them to pay tributes and actions.
 • [b]Tributes[/b] charge rent from other players when you own the matching realm.
 • [b]Actions[/b] have effects — steal cards, force payments, cancel plays. Every action can be banked instead of played for its pearl value.

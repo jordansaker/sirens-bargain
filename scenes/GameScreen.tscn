@@ -100,46 +100,63 @@ horizontal_alignment = 1
 theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 
-[node name="DiscardPileBox" type="PanelContainer" parent="Root/GameCol/MidTable"]
+[node name="DiscardPileBox" type="Control" parent="Root/GameCol/MidTable"]
 custom_minimum_size = Vector2(72, 100)
 layout_mode = 2
 
-[node name="DiscardInner" type="VBoxContainer" parent="Root/GameCol/MidTable/DiscardPileBox"]
-layout_mode = 2
-theme_override_constants/separation = 2
-
-[node name="DiscardTopBanner" type="ColorRect" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+[node name="DiscardArt" type="TextureRect" parent="Root/GameCol/MidTable/DiscardPileBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 10)
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DiscardTopBanner" type="ColorRect" parent="Root/GameCol/MidTable/DiscardPileBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 12.0
+grow_horizontal = 2
 color = Color(0.133, 0.188, 0.310, 1)
 
-[node name="DiscardTopLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+[node name="DiscardTopLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 24)
-layout_mode = 2
-size_flags_vertical = 3
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 text = ""
 autowrap_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1
-theme_override_font_sizes/font_size = 9
+theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
 
-[node name="DiscardLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
+[node name="DiscardLabel" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox"]
 unique_name_in_owner = true
-layout_mode = 2
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -20.0
+grow_horizontal = 2
 text = "0"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 12
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 14
 theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
-
-[node name="DiscardTag" type="Label" parent="Root/GameCol/MidTable/DiscardPileBox/DiscardInner"]
-layout_mode = 2
-text = "discard"
-horizontal_alignment = 1
-theme_override_font_sizes/font_size = 10
-theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.85)
+theme_override_constants/outline_size = 4
 
 [node name="PlayerBoard" parent="Root/GameCol" instance=ExtResource("3_player")]
 unique_name_in_owner = true
@@ -368,10 +385,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -170.0
-offset_top = -260.0
-offset_right = 170.0
-offset_bottom = 260.0
+offset_left = -240.0
+offset_top = -335.0
+offset_right = 240.0
+offset_bottom = 335.0
 grow_horizontal = 2
 grow_vertical = 2
 

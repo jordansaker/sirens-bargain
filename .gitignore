@@ -5,6 +5,9 @@ export.cfg
 export_credentials.cfg
 *.translation
 
+# Local export outputs
+build/
+
 # macOS
 .DS_Store
 

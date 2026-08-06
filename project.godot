@@ -19,6 +19,10 @@ config/description="A mermaid-themed card game of realms, rent, and tributes."
 run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[autoload]
+
+NetSession="*res://scripts/net/NetSession.gd"
+
 [debug]
 
 gdscript/warnings/treat_warnings_as_errors=false

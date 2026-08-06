@@ -65,7 +65,14 @@ layout_mode = 2
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 56)
 layout_mode = 2
-text = "Play"
+text = "Play vs AI"
+theme_override_font_sizes/font_size = 22
+
+[node name="OnlineButton" type="Button" parent="Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+text = "Play online"
 theme_override_font_sizes/font_size = 22
 
 [node name="HowToPlayButton" type="Button" parent="Content"]
