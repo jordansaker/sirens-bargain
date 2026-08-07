@@ -571,12 +571,12 @@ func _settle_owed(tm: TurnManager, owed: Dictionary) -> void:
 				var from_bank: Array[CardData] = picks.get("bank", [] as Array[CardData])
 				var from_realms: Array[CardData] = picks.get("realms", [] as Array[CardData])
 				PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
-				tm.log_payment(payer_id, from_bank, from_realms)
+				tm.log_payment(payer_id, player_id, from_bank, from_realms)
 				continue
 		# Fall-through: compute picks so we can log, then apply.
 		var auto_picks := PaymentResolver.smart_picks(payer, amount)
 		PaymentResolver.pay(payer, receiver, amount, auto_picks["bank"], auto_picks["realms"])
-		tm.log_payment(payer_id, auto_picks["bank"], auto_picks["realms"])
+		tm.log_payment(payer_id, player_id, auto_picks["bank"], auto_picks["realms"])
 
 # Delegates to PaymentResolver.settle_smart — same realm-layout-aware pool
 # order, same min-overpay-with-tiebreak selection.

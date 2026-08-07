@@ -295,6 +295,7 @@ func _wire_signals() -> void:
 	_player_board.bank_pressed.connect(_on_bank_view_requested)
 	# Play-by-play log fed by TurnManager. Fires for both human and AI plays.
 	_tm.play_logged.connect(_on_play_logged)
+	_tm.payment_applied.connect(_on_payment_applied)
 	_play_again_button.pressed.connect(_on_play_again_pressed)
 	_main_menu_button.pressed.connect(_on_main_menu_pressed)
 	_refuse_button.pressed.connect(func(): _refusal_answered.emit(true))
@@ -552,6 +553,7 @@ func _apply_deck_init(payload: Dictionary) -> void:
 	_waiting_for_deck_init = false
 	# Re-connect play_logged since the TurnManager instance changed.
 	_tm.play_logged.connect(_on_play_logged)
+	_tm.payment_applied.connect(_on_payment_applied)
 	_configure_boards()
 	_refresh_all()
 	if _gs.current_player_index == HUMAN_ID:
@@ -2024,7 +2026,7 @@ func _settle_owed_to_human(owed: Dictionary, label: String) -> void:
 		var from_bank: Array[CardData] = picks["bank"]
 		var from_realms: Array[CardData] = picks["realms"]
 		var paid := PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
-		_tm.log_payment(payer_id, from_bank, from_realms)
+		_tm.log_payment(payer_id, HUMAN_ID, from_bank, from_realms)
 		total += paid
 	if total > 0:
 		_prompt("%s → %d pearls." % [label, total])
@@ -2125,6 +2127,65 @@ func _on_bank_view_requested(player_id: int) -> void:
 		_prompt("Opponent bank is hidden.")
 		return
 	_show_bank_peek(player_id)
+
+func _on_payment_applied(payer_id: int, receiver_id: int, _total: int, card_count: int) -> void:
+	# Fly a small burst of pearl icons from the payer's board area to the
+	# receiver's bank pill. Capped so a 6-card settle doesn't spawn 6 sprites.
+	var count := clamp(card_count, 1, 6)
+	var src := _board_center(payer_id)
+	var dst := _bank_pill_center(receiver_id)
+	if src == Vector2.ZERO or dst == Vector2.ZERO:
+		return
+	for i in range(count):
+		var pearl := Panel.new()
+		pearl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pearl.custom_minimum_size = Vector2(16, 16)
+		pearl.size = Vector2(16, 16)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = CardColors.PEARL
+		sb.border_color = CardColors.GOLD
+		sb.border_width_left = 1
+		sb.border_width_right = 1
+		sb.border_width_top = 1
+		sb.border_width_bottom = 1
+		sb.corner_radius_top_left = 8
+		sb.corner_radius_top_right = 8
+		sb.corner_radius_bottom_left = 8
+		sb.corner_radius_bottom_right = 8
+		sb.shadow_color = Color(0, 0, 0, 0.4)
+		sb.shadow_size = 4
+		pearl.add_theme_stylebox_override("panel", sb)
+		var jitter := Vector2(randf_range(-12, 12), randf_range(-8, 8))
+		pearl.position = src + jitter - Vector2(8, 8)
+		add_child(pearl)
+		var stagger: float = 0.05 * float(i)
+		var tw := create_tween()
+		tw.tween_interval(stagger)
+		tw.tween_property(pearl, "position", dst - Vector2(8, 8), 0.55) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(pearl, "scale", Vector2(0.3, 0.3), 0.15)
+		tw.tween_callback(pearl.queue_free)
+
+# Screen-space centre of the given player's board strip.
+func _board_center(player_id: int) -> Vector2:
+	var board: Control = _player_board if player_id == HUMAN_ID else _opponent_board
+	if board == null:
+		return Vector2.ZERO
+	var rect := board.get_global_rect()
+	return get_global_transform().affine_inverse() * (rect.position + rect.size * 0.5)
+
+# Screen-space centre of the given player's bank pill (the "P" icon).
+func _bank_pill_center(player_id: int) -> Vector2:
+	var board: PlayerBoardView = _player_board if player_id == HUMAN_ID else _opponent_board
+	if board == null:
+		return Vector2.ZERO
+	var pill := board.get_node_or_null("HBoxContainer") as Control
+	if pill == null:
+		# Fall back to board centre.
+		return _board_center(player_id)
+	var rect := board.get_global_rect()
+	# Bank pill sits at the right side of the header row — biased right.
+	return get_global_transform().affine_inverse() * (rect.position + Vector2(rect.size.x * 0.75, rect.size.y * 0.25))
 
 func _on_discard_pile_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -3217,7 +3278,7 @@ func _settle_online(owed: Dictionary) -> void:
 				"realm_ids": _card_ids_from(from_realms),
 			})
 			PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
-			_tm.log_payment(HUMAN_ID, from_bank, from_realms)
+			_tm.log_payment(HUMAN_ID, receiver.id, from_bank, from_realms)
 			_refresh_all()
 		else:
 			# Opponent is paying — wait for their SETTLE_PAYMENT broadcast.
@@ -3356,7 +3417,7 @@ func _apply_settle_payment(payload: Dictionary) -> void:
 		if c != null:
 			from_realms.append(c)
 	PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
-	_tm.log_payment(payer_id, from_bank, from_realms)
+	_tm.log_payment(payer_id, receiver_id, from_bank, from_realms)
 	_refresh_all()
 	# If WE were the receiver, flash a banner so the payment is
 	# unmistakable. The log line is small; the banner catches the eye.
