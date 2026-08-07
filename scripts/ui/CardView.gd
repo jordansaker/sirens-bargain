@@ -229,11 +229,11 @@ func _refresh_style() -> void:
 		_hint_label.add_theme_color_override("font_color", CardColors.SELECT)
 
 func _on_gui_input(event: InputEvent) -> void:
+	# Only listen to mouse events — `emulate_mouse_from_touch` is on in
+	# project settings so touches on mobile already fire here as
+	# InputEventMouseButton. Adding a parallel InputEventScreenTouch branch
+	# would double-fire the tap and toggle-toggle the selection back off.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			selected.emit(card)
-	elif event is InputEventScreenTouch:
-		var st := event as InputEventScreenTouch
-		if st.pressed:
 			selected.emit(card)

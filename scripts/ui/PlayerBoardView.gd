@@ -26,6 +26,7 @@ var _header: HBoxContainer
 var _avatar_lbl: Label
 var _name_lbl: Label
 var _tag_lbl: Label
+var _hand_lbl: Label
 var _bank_pearl_dot: Label
 var _bank_lbl: Label
 var _chip_scroll: ScrollContainer
@@ -59,6 +60,14 @@ func _build_header() -> void:
 	_tag_lbl.add_theme_font_size_override("font_size", 11)
 	_tag_lbl.add_theme_color_override("font_color", CardColors.HAZE)
 	_header.add_child(_tag_lbl)
+
+	# Hand-size readout — visible for both boards. On the opponent strip it's
+	# especially useful (their bank is hidden) so the local player can gauge
+	# how many actions the opponent is holding without seeing the cards.
+	_hand_lbl = Label.new()
+	_hand_lbl.add_theme_font_size_override("font_size", 11)
+	_hand_lbl.add_theme_color_override("font_color", CardColors.HAZE)
+	_header.add_child(_hand_lbl)
 	# Bank sits right next to the name (no expand-spacer between them).
 
 	# Pearl currency badge — a "P" in dark ink on a rounded pearl-cream
@@ -150,7 +159,9 @@ func refresh() -> void:
 	if player == null:
 		_bank_lbl.text = "0"
 		_bank_pearl_dot.visible = show_bank_pearls
+		_hand_lbl.text = ""
 		return
+	_hand_lbl.text = "%d in hand" % player.hand.size()
 
 	if show_bank_pearls:
 		_bank_lbl.text = "%d" % player.total_bank_value()
@@ -164,13 +175,12 @@ func refresh() -> void:
 	_populate_chips()
 
 func _on_bank_gui_input(event: InputEvent) -> void:
+	# Mouse events only — mobile taps come through here via
+	# emulate_mouse_from_touch, so a separate InputEventScreenTouch branch
+	# would double-fire and cancel the tap out.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and player != null:
-			bank_pressed.emit(player.id)
-	elif event is InputEventScreenTouch:
-		var st := event as InputEventScreenTouch
-		if st.pressed and player != null:
 			bank_pressed.emit(player.id)
 
 func pop_realms(realm_names: Array) -> void:
