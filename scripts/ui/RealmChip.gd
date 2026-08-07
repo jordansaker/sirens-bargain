@@ -19,11 +19,14 @@ var realm_name: String = ""
 var current: int = 0
 var target: int = 0
 var mode: int = Mode.NORMAL
+var has_cottage: bool = false
+var has_palace: bool = false
 
 var _bar: Panel        # coloured header with the realm name overlaid
 var _bar_label: Label
 var _count: Label
 var _col: VBoxContainer
+var _modifier_badge: Label
 var _pop_tween: Tween = null
 var _popped: bool = false
 
@@ -60,6 +63,18 @@ func _ready() -> void:
 	_bar_label.add_theme_font_size_override("font_size", 9)
 	_bar.add_child(_bar_label)
 
+	# Modifier badge — sits at the right edge of the coloured header and
+	# renders "⌂" for Coral Cottage, "♛" for Pearl Palace (both if attached).
+	_modifier_badge = Label.new()
+	_modifier_badge.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	_modifier_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_modifier_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_modifier_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_modifier_badge.add_theme_font_size_override("font_size", 10)
+	_modifier_badge.offset_left = -22
+	_modifier_badge.offset_right = -3
+	_bar.add_child(_modifier_badge)
+
 	_count = Label.new()
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -70,10 +85,12 @@ func _ready() -> void:
 
 	_refresh()
 
-func configure(name_: String, current_: int, target_: int, complete: bool) -> void:
+func configure(name_: String, current_: int, target_: int, complete: bool, has_cottage_: bool = false, has_palace_: bool = false) -> void:
 	realm_name = name_
 	current = current_
 	target = target_
+	has_cottage = has_cottage_
+	has_palace = has_palace_
 	mode = Mode.COMPLETE if complete else Mode.NORMAL
 	_refresh()
 
@@ -150,4 +167,16 @@ func _paint_bar(name_: String, complete: bool) -> void:
 	bar_sb.corner_radius_bottom_right = 0
 	_bar.add_theme_stylebox_override("panel", bar_sb)
 	_bar_label.text = name_
-	_bar_label.add_theme_color_override("font_color", CardColors.text_on(bg))
+	var on_bar := CardColors.text_on(bg)
+	_bar_label.add_theme_color_override("font_color", on_bar)
+	# Modifier glyphs: ⌂ for Coral Cottage, ♛ for Pearl Palace. Both if
+	# stacked. Absent when the realm has neither attached.
+	if _modifier_badge != null:
+		var glyphs := ""
+		if has_cottage:
+			glyphs += "⌂"
+		if has_palace:
+			glyphs += "♛"
+		_modifier_badge.text = glyphs
+		_modifier_badge.add_theme_color_override("font_color", on_bar)
+		_modifier_badge.visible = not glyphs.is_empty()
