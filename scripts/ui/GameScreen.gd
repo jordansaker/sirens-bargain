@@ -3098,15 +3098,29 @@ func _settle_online(owed: Dictionary) -> void:
 			# cover the debt (user picked their realm cards); returns null
 			# when the bank covers, in which case we fall back to smart auto.
 			var picks_var: Variant = await _prompt_human_payment(payer, receiver, amount)
-			var from_bank: Array[CardData]
-			var from_realms: Array[CardData]
+			# Defensively build strongly-typed arrays: Dict values come back
+			# as Variant and direct assignment to `Array[CardData]` can throw
+			# a runtime type-mismatch that silently kills the coroutine —
+			# which was leaving Cancel-triggered auto-pay in limbo.
+			var from_bank: Array[CardData] = []
+			var from_realms: Array[CardData] = []
+			var src_bank: Array = []
+			var src_realms: Array = []
 			if picks_var is Dictionary:
-				from_bank = picks_var.get("bank", [] as Array[CardData])
-				from_realms = picks_var.get("realms", [] as Array[CardData])
+				src_bank = (picks_var as Dictionary).get("bank", [])
+				src_realms = (picks_var as Dictionary).get("realms", [])
 			else:
+				# Cancel / null → fall back to smart auto so the debt still
+				# gets paid instead of stranding both peers on a hung modal.
 				var auto := PaymentResolver.smart_picks(payer, amount)
-				from_bank = auto["bank"]
-				from_realms = auto["realms"]
+				src_bank = auto.get("bank", [])
+				src_realms = auto.get("realms", [])
+			for c in src_bank:
+				if c is CardData:
+					from_bank.append(c)
+			for c in src_realms:
+				if c is CardData:
+					from_realms.append(c)
 			_broadcast({
 				"kind": NetProtocol.KIND_SETTLE_PAYMENT,
 				"payer": HUMAN_ID,
