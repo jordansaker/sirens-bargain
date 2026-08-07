@@ -716,6 +716,12 @@ func _refresh_all() -> void:
 	_refresh_hand()
 	_refresh_actions()
 	_apply_selection_pulses()
+	# Catch a win the moment the winning play lands on any peer — offline
+	# used to rely on _reset_to_idle / _after_turn_transition, but in HvH
+	# the loser's _apply_play_realm applies the winning card without ever
+	# touching those paths, so their game-over dialog never opened.
+	if _gs != null and _gs.is_game_over() and _state != InteractionState.GAME_OVER:
+		_show_game_over()
 
 # Pop the realm chip(s) on the player's own board that match the currently
 # selected realm/wild-realm card in hand. Chips are rebuilt on every board
@@ -1918,10 +1924,15 @@ func _settle_owed_to_human(owed: Dictionary, label: String) -> void:
 		if amount <= 0:
 			continue
 		var payer: PlayerState = _gs.players[payer_id]
-		# Realm-layout-aware payment: protects the AI's set progress the same
-		# way it does when it's the receiver, so debts extracted by the human
-		# don't disproportionately dismantle its near-complete realms.
-		var paid := PaymentResolver.settle_smart(payer, receiver, amount)
+		# Split pick-selection from application so we can log which cards
+		# actually moved. smart_picks flattens realms into one pool and
+		# grabs the lowest-value cards first (feedback: previously auto
+		# never touched complete sets).
+		var picks := PaymentResolver.smart_picks(payer, amount)
+		var from_bank: Array[CardData] = picks["bank"]
+		var from_realms: Array[CardData] = picks["realms"]
+		var paid := PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+		_tm.log_payment(payer_id, from_bank, from_realms)
 		total += paid
 	if total > 0:
 		_prompt("%s → %d pearls." % [label, total])
@@ -2972,6 +2983,7 @@ func _settle_online(owed: Dictionary) -> void:
 				"realm_ids": _card_ids_from(from_realms),
 			})
 			PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+			_tm.log_payment(HUMAN_ID, from_bank, from_realms)
 			_refresh_all()
 		else:
 			# Opponent is paying — wait for their SETTLE_PAYMENT broadcast.
@@ -3101,5 +3113,6 @@ func _apply_settle_payment(payload: Dictionary) -> void:
 		if c != null:
 			from_realms.append(c)
 	PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+	_tm.log_payment(payer_id, from_bank, from_realms)
 	_refresh_all()
 	_remote_payment_decided.emit()

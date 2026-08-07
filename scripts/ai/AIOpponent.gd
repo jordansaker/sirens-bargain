@@ -292,7 +292,7 @@ func _try_tribute(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		await _settle_owed(gs, owed)
+		await _settle_owed(tm, owed)
 	return true
 
 func _all_opponents_can_pay(gs: GameState, amount: int) -> bool:
@@ -406,7 +406,7 @@ func _try_toll(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		await _settle_owed(gs, owed)
+		await _settle_owed(tm, owed)
 	return true
 
 func _try_feast(tm: TurnManager, all_ais: Dictionary) -> bool:
@@ -423,7 +423,7 @@ func _try_feast(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		await _settle_owed(gs, owed)
+		await _settle_owed(tm, owed)
 	return true
 
 func _try_ride(tm: TurnManager, player: PlayerState) -> bool:
@@ -553,7 +553,8 @@ func _pick_leading_opponent(gs: GameState) -> int:
 			best_id = p.id
 	return best_id
 
-func _settle_owed(gs: GameState, owed: Dictionary) -> void:
+func _settle_owed(tm: TurnManager, owed: Dictionary) -> void:
+	var gs := tm.game_state
 	var receiver: PlayerState = gs.players[player_id]
 	for key in owed.keys():
 		var payer_id: int = int(key)
@@ -570,8 +571,12 @@ func _settle_owed(gs: GameState, owed: Dictionary) -> void:
 				var from_bank: Array[CardData] = picks.get("bank", [] as Array[CardData])
 				var from_realms: Array[CardData] = picks.get("realms", [] as Array[CardData])
 				PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+				tm.log_payment(payer_id, from_bank, from_realms)
 				continue
-		_settle_smart(payer, receiver, amount)
+		# Fall-through: compute picks so we can log, then apply.
+		var auto_picks := PaymentResolver.smart_picks(payer, amount)
+		PaymentResolver.pay(payer, receiver, amount, auto_picks["bank"], auto_picks["realms"])
+		tm.log_payment(payer_id, auto_picks["bank"], auto_picks["realms"])
 
 # Delegates to PaymentResolver.settle_smart — same realm-layout-aware pool
 # order, same min-overpay-with-tiebreak selection.

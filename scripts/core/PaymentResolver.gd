@@ -185,40 +185,21 @@ static func smart_picks(payer: PlayerState, amount: int) -> Dictionary:
 		else:
 			bank_non_realm.append(c)
 
-	# Incomplete realms grouped and ordered by progress ratio ASC — the
-	# further from completion, the more expendable. A 1/3 realm's card is
-	# less painful to give up than a 2/3 realm's card, which would kill a
-	# near-win.
-	var incomplete_groups: Array = []
+	# All positive-value realm cards, complete and incomplete, treated as a
+	# single pool. Feedback: partitioning by set-completion left auto-pay
+	# ignoring complete sets even when their cards were the smallest debts
+	# would need — flat pool + min-overpay picks the truly lowest-value
+	# subset regardless of which realm it comes from.
+	var realm_pool: Array[CardData] = []
 	for r in payer.realms.keys():
-		if payer.is_realm_complete(r):
-			continue
-		var stack: Array = payer.realms[r]
-		var positive: Array[CardData] = []
-		for c in stack:
-			if c.value > 0:
-				positive.append(c)
-		if positive.is_empty():
-			continue
-		var target_size := Realms.size_of(r)
-		var progress := float(stack.size()) / float(target_size) if target_size > 0 else 1.0
-		incomplete_groups.append({"progress": progress, "cards": positive})
-	incomplete_groups.sort_custom(func(a, b): return a["progress"] < b["progress"])
-
-	var complete: Array[CardData] = []
-	for r in payer.realms.keys():
-		if not payer.is_realm_complete(r):
-			continue
 		for c in payer.realms[r]:
 			if c.value > 0:
-				complete.append(c)
+				realm_pool.append(c)
 
 	var pools: Array = []
 	pools.append({"cards": bank_non_realm, "bucket": "bank"})
 	pools.append({"cards": bank_realm, "bucket": "bank"})
-	for g in incomplete_groups:
-		pools.append({"cards": g["cards"], "bucket": "realms"})
-	pools.append({"cards": complete, "bucket": "realms"})
+	pools.append({"cards": realm_pool, "bucket": "realms"})
 
 	for pool in pools:
 		if remaining <= 0:
@@ -232,10 +213,11 @@ static func smart_picks(payer: PlayerState, amount: int) -> Dictionary:
 			pool_total += c.value
 		var target := from_bank if bucket == "bank" else from_realms
 		if pool_total >= remaining:
-			# Realm pools protect set progress (fewer-cards tiebreak); bank
-			# pools preserve high-denomination coins (keep-large tiebreak).
-			var prefer_fewer := bucket == "realms"
-			var picks := _min_overpay_subset(pool_cards, remaining, prefer_fewer)
+			# Both pools use keep-large tiebreak: spend the smallest-value
+			# cards, keep the big ones for future single-shot debts. Feedback:
+			# on realms this reads as "hand over the lowest values" rather
+			# than "protect set progress at all costs".
+			var picks := _min_overpay_subset(pool_cards, remaining, false)
 			for p in picks:
 				target.append(p)
 			remaining = 0

@@ -419,6 +419,25 @@ func refuse(target_id: int, refuser_id: int, refusal_card: CardData) -> bool:
 	play_logged.emit(refuser_id, "%s with Siren's Refusal" % verb)
 	return true
 
+# Emit a play-log line describing a payment. Called from every site that
+# runs PaymentResolver.pay so the play-by-play records which cards moved
+# — otherwise a tribute settle silently transfers cards without a trace.
+func log_payment(payer_id: int, from_bank: Array, from_realms: Array) -> void:
+	var names: Array[String] = []
+	var total := 0
+	for c in from_bank:
+		if c is CardData:
+			names.append((c as CardData).name)
+			total += (c as CardData).value
+	for c in from_realms:
+		if c is CardData:
+			names.append((c as CardData).name)
+			total += (c as CardData).value
+	if names.is_empty():
+		play_logged.emit(payer_id, "paid nothing (broke)")
+		return
+	play_logged.emit(payer_id, "paid %d P (%s)" % [total, ", ".join(names)])
+
 # Apply the pending action for every non-cancelled target. Returns:
 #   Dictionary  — for owed-map actions (tribute, sirens_toll, toll_of_the_tides,
 #                 mermaids_feast). Keyed by target_id; cancelled targets omitted.

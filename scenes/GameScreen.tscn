@@ -417,9 +417,10 @@ theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 [node name="PeekScroll" type="ScrollContainer" parent="RealmPeek/PeekMargin/PeekVBox"]
 layout_mode = 2
 size_flags_vertical = 3
-custom_minimum_size = Vector2(0, 140)
+custom_minimum_size = Vector2(0, 260)
 horizontal_scroll_mode = 2
 vertical_scroll_mode = 0
+mouse_filter = 1
 
 [node name="PeekRow" type="HBoxContainer" parent="RealmPeek/PeekMargin/PeekVBox/PeekScroll"]
 unique_name_in_owner = true

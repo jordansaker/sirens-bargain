@@ -172,12 +172,13 @@ func test_settle_smart_bank_keeps_large_denominations() -> void:
 	assert_eq(payer.bank.size(), 1, "3-pearl preserved")
 	assert_eq(payer.total_bank_value(), 3)
 
-func test_settle_smart_realm_pool_protects_set_progress() -> void:
-	# Realm with [1P, 2P, 3P] cards, debt 3 → picks the single {3} instead of
-	# {1, 2} so the realm loses only one card of progress toward completion.
+func test_settle_smart_realm_pool_spends_lowest_values() -> void:
+	# Realm pool [1P, 2P, 3P] paying 3 → picks {1, 2} to spend the smallest
+	# cards and keep the 3 for a future single-shot debt. Feedback: don't
+	# preserve set progress at all costs; low-value cards are the ones you
+	# actually want to hand over first.
 	var payer := PlayerState.new(0)
 	var receiver := PlayerState.new(1)
-	# Sunken Temple target-size 3; play three cards so pool = [1, 2, 3].
 	for v in [1, 2, 3]:
 		var c := _realm("temple_%d" % v, "Sunken Temple", v)
 		payer.hand.append(c)
@@ -185,7 +186,8 @@ func test_settle_smart_realm_pool_protects_set_progress() -> void:
 	var moved := PaymentResolver.settle_smart(payer, receiver, 3)
 	assert_eq(moved, 3)
 	var left: Array = payer.realms["Sunken Temple"]
-	assert_eq(left.size(), 2, "Only one card taken — realm keeps 2/3 progress")
+	assert_eq(left.size(), 1, "Only the 3-pearl card remains")
+	assert_eq((left[0] as CardData).value, 3)
 
 func test_settle_smart_skips_zero_value_cards() -> void:
 	# A 0-value card in a realm shouldn't get shipped as a courtesy giveaway
