@@ -154,6 +154,10 @@ var _fan_last_toggle_msec: int = 0
 var _zoom_enabled: bool = false
 # 3 dots below the plays counter — filled = plays remaining, dim = spent.
 var _plays_dots: HBoxContainer = null
+# True on the attacker's peer between "action resolved with an owed dict"
+# and "opponent broadcast their SETTLE_PAYMENT". End Turn stays disabled
+# during that window so we can't jump to the next turn mid-settlement.
+var _awaiting_payment: bool = false
 # Captures whatever _tm.resolve_pending() returned on the most recent apply,
 # so `_run_online_refusable_flow` can return the outcome even when RESOLVE
 # was triggered by the opponent's broadcast (i.e. `_apply_resolve` ran the
@@ -303,7 +307,14 @@ func _wire_signals() -> void:
 func _start_human_turn() -> void:
 	_state = InteractionState.IDLE
 	_selected_card = null
+	# Preserve pay_pending across the ctx wipe. In HvH the attacker can end
+	# their turn while we're still in the picker; without this, our own
+	# turn-start would clear the picker's state mid-selection and taps stop
+	# doing anything.
+	var pay_pending: Variant = _ctx.get("pay_pending")
 	_ctx.clear()
+	if pay_pending != null:
+		_ctx["pay_pending"] = pay_pending
 	_tm.start_turn()
 	_refresh_all()
 	_flash_turn_banner("YOUR TURN")
@@ -1048,8 +1059,10 @@ func _refresh_actions() -> void:
 	var can_play_turn := _tm.can_play()
 	_bank_button.disabled = not (have_selection and can_play_turn and _selected_card.can_bank())
 	_play_button.disabled = not (have_selection and _card_is_playable(_selected_card))
-	_end_turn_button.disabled = false
-	_end_turn_button.text = "End turn"
+	# Block End Turn while a payment is still in flight (opponent settling
+	# a tribute / toll / feast against us).
+	_end_turn_button.disabled = _awaiting_payment
+	_end_turn_button.text = "Waiting for payment…" if _awaiting_payment else "End turn"
 
 func _is_targeting_state() -> bool:
 	return _state in [
@@ -2315,16 +2328,16 @@ func _prompt_human_payment(payer: PlayerState, receiver: PlayerState, amount: in
 		return null
 	return picks_dict
 
-# Repurpose the RealmPeek modal as a card-selection UI. Shows both bank AND
-# realm cards; the player must select any combination that sums >= amount.
+# Repurpose the RealmPeek modal as a card-selection UI. Enforces the "bank
+# first" rule: while the bank has any pearls, only bank cards are pickable
+# — you can't pay with a realm card unless the bank is empty (or can't
+# cover the debt, in which case all bank cards get auto-included and the
+# picker shows realm cards for the shortfall).
 # Returns {"bank": Array[CardData], "realms": Array[CardData]} on confirm,
 # or null if the user hit Auto / Cancel.
 func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int) -> Variant:
 	var who := OPPONENT_NAME if receiver.id != HUMAN_ID else "yourself"
 	_peek_title.text = "Pay %d P to %s" % [amount, who]
-	_peek_subtitle.text = "Pick cards summing to at least %d P." % amount
-	# Split candidate cards so we can (a) render bank cards first for
-	# familiarity, (b) partition picks correctly on confirm.
 	var bank_cards: Array[CardData] = []
 	for c in payer.bank:
 		if c.value > 0:
@@ -2338,17 +2351,38 @@ func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int) ->
 				realm_cards.append(c)
 	bank_cards.sort_custom(func(a, b): return a.value < b.value)
 	realm_cards.sort_custom(func(a, b): return a.value < b.value)
+
+	# Mode selection: bank-first rule.
+	var bank_total := 0
+	for c in bank_cards:
+		bank_total += c.value
+	var forced_bank: Array[CardData] = []
+	var visible_cards: Array[CardData] = []
+	if bank_total >= amount:
+		# Bank covers the debt on its own — player picks which pearls to
+		# spend. Realm cards stay off-limits.
+		visible_cards = bank_cards
+		_peek_subtitle.text = "Pick bank cards summing to at least %d P." % amount
+	else:
+		# Bank can't cover — auto-drain it and let the player pick realm
+		# cards to cover the shortfall.
+		forced_bank = bank_cards.duplicate()
+		visible_cards = realm_cards
+		var shortfall := amount - bank_total
+		_peek_subtitle.text = "Bank (%d P) is auto-drained. Pick realm cards for %d P more." % [bank_total, shortfall]
+
 	_ctx["pay_pending"] = {
 		"amount": amount,
 		"picks": [] as Array[CardData],
 		"bank_ids": _card_ids_set(bank_cards),
+		"forced_bank": forced_bank,
 	}
 	_ctx.erase("peek_pick_cb")
 	_ctx.erase("peek_player")
 	_ctx.erase("peek_realm")
 	for child in _peek_row.get_children():
 		child.queue_free()
-	for c in bank_cards + realm_cards:
+	for c in visible_cards:
 		var view := CardView.new()
 		view.card = c
 		view.selected.connect(_on_peek_card_selected)
@@ -2356,9 +2390,10 @@ func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int) ->
 	_peek_confirm.text = "Confirm (0 P)"
 	_peek_confirm.disabled = true
 	_peek_confirm.visible = true
-	# "Auto" only makes sense offline (where a bank-shortcut / smart_picks
-	# fallback exists). Online always uses the picks the player made.
-	_peek_close.text = "Auto" if not _is_online else "Cancel"
+	# Payment is never cancellable — the debt must be paid. The close button
+	# always reads "Auto" and falls back to smart_picks (bank first, then
+	# lowest-value realm cards) so a mis-tap still settles.
+	_peek_close.text = "Auto"
 	_peek_root.visible = true
 	var answer: Variant = await _payment_answered
 	return answer
@@ -2391,9 +2426,17 @@ func _toggle_pay_pick(card: CardData) -> void:
 	var selected_sum := 0
 	for c in picks:
 		selected_sum += c.value
-	var remaining: int = int(pending.get("remaining", 0))
-	_peek_confirm.text = "Confirm (%d P)" % selected_sum
-	_peek_confirm.disabled = selected_sum < remaining
+	# Forced-bank total is added to picks-sum in realm mode (auto-drained
+	# bank cards count toward covering the debt).
+	var forced_bank: Array = pending.get("forced_bank", [])
+	var forced_sum := 0
+	for c in forced_bank:
+		if c is CardData:
+			forced_sum += (c as CardData).value
+	var amount: int = int(pending.get("amount", 0))
+	var effective := selected_sum + forced_sum
+	_peek_confirm.text = "Confirm (%d P)" % effective
+	_peek_confirm.disabled = effective < amount
 
 func _on_peek_confirm_pressed() -> void:
 	var pending: Dictionary = _ctx.get("pay_pending", {})
@@ -2401,10 +2444,15 @@ func _on_peek_confirm_pressed() -> void:
 		return
 	var picks: Array[CardData] = pending.get("picks", [] as Array[CardData])
 	var bank_ids_set: Dictionary = pending.get("bank_ids", {})
-	# Partition picks by which pool the card originated from so the caller
-	# can hand explicit bank/realm lists to PaymentResolver.pay.
+	# Auto-drained bank cards (only populated when bank alone couldn't cover
+	# the debt — the picker showed realms then).
+	var forced_bank_raw: Array = pending.get("forced_bank", [])
 	var from_bank: Array[CardData] = []
 	var from_realms: Array[CardData] = []
+	for c in forced_bank_raw:
+		if c is CardData:
+			from_bank.append(c)
+	# Partition user picks by which pool each card originated from.
 	for c in picks:
 		if bank_ids_set.has(c.id):
 			from_bank.append(c)
@@ -3134,7 +3182,12 @@ func _settle_online(owed: Dictionary) -> void:
 			_refresh_all()
 		else:
 			# Opponent is paying — wait for their SETTLE_PAYMENT broadcast.
+			# Lock End Turn until they send it so we can't skip past.
+			_awaiting_payment = true
+			_refresh_actions()
 			await _remote_payment_decided
+			_awaiting_payment = false
+			_refresh_actions()
 
 static func _card_ids_from(cards: Array[CardData]) -> Array:
 	var out: Array = []
@@ -3266,4 +3319,9 @@ func _apply_settle_payment(payload: Dictionary) -> void:
 	PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
 	_tm.log_payment(payer_id, from_bank, from_realms)
 	_refresh_all()
+	# If WE were the receiver, flash a banner so the payment is
+	# unmistakable. The log line is small; the banner catches the eye.
+	if receiver_id == HUMAN_ID:
+		var payer_name := OPPONENT_NAME if payer_id != HUMAN_ID else HUMAN_NAME
+		_flash_turn_banner("%s PAID YOU %d P" % [payer_name.to_upper(), amount])
 	_remote_payment_decided.emit()
