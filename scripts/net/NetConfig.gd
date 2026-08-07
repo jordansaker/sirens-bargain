@@ -5,8 +5,8 @@ extends RefCounted
 # constants. The web export can also override via a `?server=host:port`
 # query string (see LobbyScreen).
 
-const DEFAULT_HTTP_BASE := "http://localhost:8788"
-const DEFAULT_WS_URL := "ws://localhost:8788/ws"
+const DEFAULT_HTTP_BASE := "https://sirens-bargain-relay.fly.dev"
+const DEFAULT_WS_URL := "wss://sirens-bargain-relay.fly.dev/ws"
 
 static func http_base() -> String:
 	# TODO: swap for a project setting or env var when we ship a hosted relay.
