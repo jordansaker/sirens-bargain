@@ -578,6 +578,13 @@ theme_override_colors/font_color = Color(0.768, 0.839, 0.886, 1)
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="CardPeekPrev" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+text = "‹"
+theme_override_font_sizes/font_size = 22
+
 [node name="CardPeekBank" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 40)
@@ -601,6 +608,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Close"
 theme_override_font_sizes/font_size = 12
+
+[node name="CardPeekNext" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+text = "›"
+theme_override_font_sizes/font_size = 22
 
 [node name="ToMenuButton" type="Button" parent="."]
 unique_name_in_owner = true

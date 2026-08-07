@@ -123,6 +123,8 @@ signal _remote_payment_decided
 @onready var _card_peek_bank: Button = %CardPeekBank
 @onready var _card_peek_play: Button = %CardPeekPlay
 @onready var _card_peek_close: Button = %CardPeekClose
+@onready var _card_peek_prev: Button = %CardPeekPrev
+@onready var _card_peek_next: Button = %CardPeekNext
 
 var _card_peek_card: CardData = null
 var _card_peek_art: TextureRect = null
@@ -143,6 +145,11 @@ var _ctx: Dictionary = {}      # scratchpad for multi-step target picks
 var _pending_discards: Array[CardData] = []
 var _hand_fanned: bool = false
 var _fan_timer: SceneTreeTimer = null
+# Double-tap Fan → locked-open: no auto-collapse until the user single-taps
+# to unfan. Time-based double-tap detection since `toggled` doesn't hand us
+# the raw event with its `double_click` bit.
+var _fan_locked: bool = false
+var _fan_last_toggle_msec: int = 0
 var _zoom_enabled: bool = false
 # 3 dots below the plays counter — filled = plays remaining, dim = spent.
 var _plays_dots: HBoxContainer = null
@@ -262,6 +269,8 @@ func _wire_signals() -> void:
 	_card_peek_bank.pressed.connect(_on_card_peek_bank_pressed)
 	_card_peek_play.pressed.connect(_on_card_peek_play_pressed)
 	_card_peek_close.pressed.connect(_hide_card_peek)
+	_card_peek_prev.pressed.connect(func(): _cycle_card_peek(-1))
+	_card_peek_next.pressed.connect(func(): _cycle_card_peek(1))
 	_card_peek_scrim.gui_input.connect(_on_card_peek_scrim_input)
 	_opponent_board.realm_chip_pressed.connect(_on_opp_chip_pressed)
 	_player_board.realm_chip_pressed.connect(_on_own_chip_pressed)
@@ -360,13 +369,26 @@ func _await_opponent_turn() -> void:
 # Toggle the hand's spread. Auto-collapses after a few seconds so the row
 # doesn't stay wide while you're playing.
 func _on_fan_toggled(pressed: bool) -> void:
-	_hand_fanned = pressed
-	_refresh_hand()
-	if _fan_timer != null:
-		# Best-effort cancel of the previous timer by nulling our ref — the
-		# check inside _collapse_fan_after keeps the callback a no-op once
-		# _fan_timer no longer matches.
+	var now := Time.get_ticks_msec()
+	var elapsed := now - _fan_last_toggle_msec
+	_fan_last_toggle_msec = now
+	# Double-tap window (~400 ms). Two rapid toggles = lock the fan open;
+	# force the button visually pressed regardless of what its toggle_mode
+	# just did to it.
+	if elapsed > 0 and elapsed < 400:
+		_fan_locked = true
+		_hand_fanned = true
+		_fan_button.set_pressed_no_signal(true)
 		_fan_timer = null
+		_fan_button.text = "Stack"
+		_refresh_hand()
+		return
+	# Single tap → normal toggle, 5-second auto-collapse when fanning open.
+	_fan_locked = false
+	_hand_fanned = pressed
+	_fan_timer = null
+	_fan_button.text = "Stack" if pressed else "Fan"
+	_refresh_hand()
 	if pressed:
 		var t := get_tree().create_timer(5.0)
 		_fan_timer = t
@@ -374,12 +396,13 @@ func _on_fan_toggled(pressed: bool) -> void:
 
 func _collapse_fan_after(t: SceneTreeTimer) -> void:
 	await t.timeout
-	# Only collapse if this timer is still the active one and the user
-	# hasn't manually toggled off in the meantime.
-	if _fan_timer != t or not _hand_fanned:
+	# Only collapse if this timer is still the active one, the user hasn't
+	# manually toggled off, AND they haven't locked the fan via double-tap.
+	if _fan_timer != t or not _hand_fanned or _fan_locked:
 		return
 	_hand_fanned = false
 	_fan_button.set_pressed_no_signal(false)
+	_fan_button.text = "Fan"
 	_fan_timer = null
 	_refresh_hand()
 
@@ -2433,6 +2456,28 @@ func _hide_card_peek() -> void:
 		_card_peek.visible = false
 	if _card_peek_scrim != null:
 		_card_peek_scrim.visible = false
+
+# Cycle the zoomed card modal to the previous / next card in the human's
+# hand, wrapping around at the ends. Called by the ‹/› buttons in the peek
+# actions row. Also updates _selected_card so state stays coherent.
+func _cycle_card_peek(delta: int) -> void:
+	if _card_peek_card == null:
+		return
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	if human.hand.is_empty():
+		return
+	var idx := human.hand.find(_card_peek_card)
+	if idx < 0:
+		return
+	var count := human.hand.size()
+	var next_idx := (idx + delta) % count
+	if next_idx < 0:
+		next_idx += count
+	var next_card := human.hand[next_idx]
+	_selected_card = next_card
+	_show_card_peek(next_card)
+	_refresh_hand()
+	_refresh_actions()
 
 func _on_card_peek_bank_pressed() -> void:
 	_hide_card_peek()
