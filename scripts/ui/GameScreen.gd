@@ -270,6 +270,11 @@ func _wire_signals() -> void:
 	_fan_button.toggled.connect(_on_fan_toggled)
 	_zoom_button.toggled.connect(_on_zoom_toggled)
 	_nudge_button.pressed.connect(_on_nudge_pressed)
+	var discard_box := get_node_or_null("Root/GameCol/MidTable/DiscardPileBox")
+	if discard_box is Control:
+		(discard_box as Control).mouse_filter = Control.MOUSE_FILTER_STOP
+		(discard_box as Control).mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		(discard_box as Control).gui_input.connect(_on_discard_pile_input)
 	# Double-tap on the background scrim = cancel any targeting flow.
 	var bg := get_node_or_null("Background")
 	if bg is Control:
@@ -2120,6 +2125,40 @@ func _on_bank_view_requested(player_id: int) -> void:
 		_prompt("Opponent bank is hidden.")
 		return
 	_show_bank_peek(player_id)
+
+func _on_discard_pile_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_show_discard_peek()
+
+# Peek modal showing the full discard pile — most recent card first so it
+# reads as a play history. Purely informational, no picker mode.
+func _show_discard_peek() -> void:
+	var count := _gs.discard_pile.size()
+	_peek_title.text = "Discard pile"
+	_peek_subtitle.text = "%d card%s discarded" % [count, "" if count == 1 else "s"]
+	_ctx.erase("peek_pick_cb")
+	_ctx["peek_player"] = -1
+	_ctx["peek_realm"] = ""
+	for child in _peek_row.get_children():
+		child.queue_free()
+	if count == 0:
+		var empty := Label.new()
+		empty.text = "(empty)"
+		empty.add_theme_color_override("font_color", CardColors.HAZE)
+		_peek_row.add_child(empty)
+	else:
+		# Reverse so the most-recently discarded card sits leftmost —
+		# players scan the "top of pile" first.
+		for i in range(count - 1, -1, -1):
+			var view := CardView.new()
+			view.card = _gs.discard_pile[i]
+			_peek_row.add_child(view)
+	_peek_close.text = "Close"
+	_peek_confirm.visible = false
+	_ctx.erase("pay_pending")
+	_peek_root.visible = true
 
 func _show_bank_peek(player_id: int) -> void:
 	var player: PlayerState = _gs.players[player_id]
