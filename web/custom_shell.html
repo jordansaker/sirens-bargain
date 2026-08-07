@@ -18,7 +18,15 @@
   }
 
   /* Godot canvas — behind the loader; the loader fades to reveal it. */
-  #canvas{ display:block; position:fixed; inset:0; width:100%; height:100%; border:0; outline:none; }
+  #canvas{
+    display:block; position:fixed; inset:0; width:100%; height:100%; border:0; outline:none;
+    /* Suppress iOS gestures + long-press menus that intercept taps meant for the game. */
+    touch-action:none;
+    -webkit-touch-callout:none;
+    -webkit-user-select:none;
+    user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
   #canvas:focus{ outline:none; }
 
   /* full-screen overlay — this is what shows while loading, then fades out */
@@ -178,6 +186,10 @@ $GODOT_HEAD_INCLUDE
     window.finishLoading = () => {
       render(100);
       setTimeout(() => {
+        // Immediately drop the loader out of the hit-test tree so mid-fade
+        // taps go through to the canvas — otherwise iOS Safari swallows
+        // the first tap on a freshly-loaded game.
+        loader.style.pointerEvents = 'none';
         loader.style.opacity = 0;
         setTimeout(() => { loader.style.display = 'none'; document.getElementById('canvas').focus(); }, 600);
       }, 350);
