@@ -70,6 +70,7 @@ layout_mode = 2
 placeholder_text = "Age"
 max_length = 3
 theme_override_font_sizes/font_size = 15
+virtual_keyboard_type = 2
 
 [node name="HostSection" type="VBoxContainer" parent="Content"]
 layout_mode = 2
