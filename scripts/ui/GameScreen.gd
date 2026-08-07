@@ -100,6 +100,7 @@ signal _remote_payment_decided
 @onready var _end_turn_button: Button = %EndTurnButton
 @onready var _fan_button: Button = %FanButton
 @onready var _zoom_button: Button = %ZoomButton
+@onready var _nudge_button: Button = %NudgeButton
 @onready var _menu_root: Panel = %ActionMenu
 @onready var _menu_title: Label = %MenuTitle
 @onready var _menu_scroll: ScrollContainer = %MenuScroll
@@ -258,6 +259,7 @@ func _wire_signals() -> void:
 	_to_menu_button.pressed.connect(_on_to_menu_pressed)
 	_fan_button.toggled.connect(_on_fan_toggled)
 	_zoom_button.toggled.connect(_on_zoom_toggled)
+	_nudge_button.pressed.connect(_on_nudge_pressed)
 	# Double-tap on the background scrim = cancel any targeting flow.
 	var bg := get_node_or_null("Background")
 	if bg is Control:
@@ -412,6 +414,47 @@ func _on_zoom_toggled(pressed: bool) -> void:
 	if not pressed and _card_peek.visible:
 		_hide_card_peek()
 
+# Nudge: shake the screen locally + tell the opponent's peer to do the same
+# ("hurry up!" ping without hijacking their turn). Rate-limited to one nudge
+# per 3 seconds so the button can't be spammed.
+var _nudge_last_msec: int = 0
+
+func _on_nudge_pressed() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _nudge_last_msec < 3000:
+		return
+	_nudge_last_msec = now
+	_do_shake_effect()
+	if _is_online:
+		_broadcast({"kind": NetProtocol.KIND_NUDGE, "actor": HUMAN_ID})
+
+func _apply_nudge(_payload: Dictionary) -> void:
+	# Received a nudge from the opponent — shake our screen.
+	_do_shake_effect()
+
+# Underwater-earthquake feel: tween Root's position in decreasing random
+# offsets so the whole play area jitters, then settles. Cheap and works on
+# every platform (no shader required).
+func _do_shake_effect() -> void:
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	var origin := root.position
+	if _sfx != null:
+		_sfx.play("action")
+	var tw := create_tween()
+	var amplitude := 14.0
+	for i in range(9):
+		var jitter := Vector2(
+			randf_range(-amplitude, amplitude),
+			randf_range(-amplitude, amplitude),
+		)
+		tw.tween_property(root, "position", origin + jitter, 0.035) \
+			.set_trans(Tween.TRANS_SINE)
+		amplitude *= 0.75
+	tw.tween_property(root, "position", origin, 0.12) \
+		.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
 func _on_background_gui_input(event: InputEvent) -> void:
 	# Double-tap the empty background = cancel a targeting flow. Ignored when
 	# no flow is active so it doesn't disrupt idle turns.
@@ -474,6 +517,8 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_resolve(payload)
 		NetProtocol.KIND_SETTLE_PAYMENT:
 			_apply_settle_payment(payload)
+		NetProtocol.KIND_NUDGE:
+			_apply_nudge(payload)
 		_:
 			# Unknown event — log for debugging.
 			_append_log("[color=#e88][unknown event %s][/color]" % kind)
@@ -2251,57 +2296,53 @@ static func _modifier_display_name(m: CardData) -> String:
 func _prompt_human_payment(payer: PlayerState, receiver: PlayerState, amount: int) -> Variant:
 	if payer == null or payer.id != HUMAN_ID:
 		return null
-	var bank_total := payer.total_bank_value()
-	if bank_total >= amount:
-		# Bank can cover — smart auto-pay handles it (min-overpay subset).
+	# In HvH, ALWAYS make the human pick their own cards — no silent bank
+	# auto-drain even when the bank alone would cover the debt. In offline
+	# vs-AI mode, keep the shortcut when the bank covers so the human isn't
+	# forced through a picker for every trivial 2 P Feast.
+	if not _is_online:
+		var bank_total := payer.total_bank_value()
+		if bank_total >= amount:
+			return null
+	var picks_dict: Variant = await _open_pay_picker(payer, receiver, amount)
+	if picks_dict == null:
 		return null
-	var remaining := amount - bank_total
-	var picks: Variant = await _open_pay_picker(payer, receiver, amount, remaining)
-	if picks == null:
-		return null
-	var from_bank: Array[CardData] = []
-	from_bank.append_array(payer.bank)
-	var from_realms: Array[CardData] = []
-	from_realms.append_array(picks as Array[CardData])
-	return {"bank": from_bank, "realms": from_realms}
+	return picks_dict
 
-# Repurpose the RealmPeek modal as a card-selection UI. Returns Array[CardData]
-# of picks (chosen realm cards) or null if the user closed the picker.
-func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int, remaining: int) -> Variant:
+# Repurpose the RealmPeek modal as a card-selection UI. Shows both bank AND
+# realm cards; the player must select any combination that sums >= amount.
+# Returns {"bank": Array[CardData], "realms": Array[CardData]} on confirm,
+# or null if the user hit Auto / Cancel.
+func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int) -> Variant:
 	var who := OPPONENT_NAME if receiver.id != HUMAN_ID else "yourself"
 	_peek_title.text = "Pay %d P to %s" % [amount, who]
-	_peek_subtitle.text = "Bank covers %d — pick cards worth %d more." % [
-		payer.total_bank_value(), remaining
-	]
+	_peek_subtitle.text = "Pick cards summing to at least %d P." % amount
+	# Split candidate cards so we can (a) render bank cards first for
+	# familiarity, (b) partition picks correctly on confirm.
+	var bank_cards: Array[CardData] = []
+	for c in payer.bank:
+		if c.value > 0:
+			bank_cards.append(c)
+	var realm_cards: Array[CardData] = []
+	for r in payer.realms.keys():
+		var stack: Array = payer.realms[r]
+		for c in stack:
+			# Zero-value cards (Rainbow Conch) can't pay a debt.
+			if c.value > 0:
+				realm_cards.append(c)
+	bank_cards.sort_custom(func(a, b): return a.value < b.value)
+	realm_cards.sort_custom(func(a, b): return a.value < b.value)
 	_ctx["pay_pending"] = {
-		"remaining": remaining,
+		"amount": amount,
 		"picks": [] as Array[CardData],
+		"bank_ids": _card_ids_set(bank_cards),
 	}
 	_ctx.erase("peek_pick_cb")
 	_ctx.erase("peek_player")
 	_ctx.erase("peek_realm")
 	for child in _peek_row.get_children():
 		child.queue_free()
-	# All realm cards from the payer, incomplete sets first (spending from an
-	# incomplete set is cheaper than breaking a complete one).
-	var incomplete: Array[CardData] = []
-	var complete: Array[CardData] = []
-	for r in payer.realms.keys():
-		var stack: Array = payer.realms[r]
-		if payer.is_realm_complete(r):
-			for c in stack:
-				# Zero-value cards (Rainbow Conch) can't pay a debt, so leave
-				# them out of the picker so the player can't accidentally
-				# waste one on a payment they don't cover.
-				if c.value > 0:
-					complete.append(c)
-		else:
-			for c in stack:
-				if c.value > 0:
-					incomplete.append(c)
-	incomplete.sort_custom(func(a, b): return a.value < b.value)
-	complete.sort_custom(func(a, b): return a.value < b.value)
-	for c in incomplete + complete:
+	for c in bank_cards + realm_cards:
 		var view := CardView.new()
 		view.card = c
 		view.selected.connect(_on_peek_card_selected)
@@ -2309,10 +2350,21 @@ func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int, re
 	_peek_confirm.text = "Confirm (0 P)"
 	_peek_confirm.disabled = true
 	_peek_confirm.visible = true
-	_peek_close.text = "Auto"
+	# "Auto" only makes sense offline (where a bank-shortcut / smart_picks
+	# fallback exists). Online always uses the picks the player made.
+	_peek_close.text = "Auto" if not _is_online else "Cancel"
 	_peek_root.visible = true
 	var answer: Variant = await _payment_answered
 	return answer
+
+# Helper: build a Dictionary-as-set of card ids for O(1) `in`-checks when
+# partitioning picks back into bank vs realm buckets at confirm-time.
+static func _card_ids_set(cards: Array) -> Dictionary:
+	var out: Dictionary = {}
+	for c in cards:
+		if c is CardData:
+			out[(c as CardData).id] = true
+	return out
 
 func _toggle_pay_pick(card: CardData) -> void:
 	var pending: Dictionary = _ctx.get("pay_pending", {})
@@ -2342,9 +2394,19 @@ func _on_peek_confirm_pressed() -> void:
 	if pending.is_empty():
 		return
 	var picks: Array[CardData] = pending.get("picks", [] as Array[CardData])
+	var bank_ids_set: Dictionary = pending.get("bank_ids", {})
+	# Partition picks by which pool the card originated from so the caller
+	# can hand explicit bank/realm lists to PaymentResolver.pay.
+	var from_bank: Array[CardData] = []
+	var from_realms: Array[CardData] = []
+	for c in picks:
+		if bank_ids_set.has(c.id):
+			from_bank.append(c)
+		else:
+			from_realms.append(c)
 	_ctx.erase("pay_pending")
 	_hide_peek()
-	_payment_answered.emit(picks)
+	_payment_answered.emit({"bank": from_bank, "realms": from_realms})
 
 # --- Card peek (tap-a-card in hand for details) --------------------------
 #
