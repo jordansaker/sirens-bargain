@@ -33,10 +33,11 @@ gdscript/warnings/treat_warnings_as_errors=false
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=960
+window/size/viewport_height=540
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/stretch/scale=1.4
 window/handheld/orientation=0
 
 [editor_plugins]
