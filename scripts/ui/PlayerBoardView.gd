@@ -7,9 +7,13 @@ extends VBoxContainer
 # winning?" in about half a second.
 
 signal realm_chip_pressed(player_id: int, realm_name: String)
+signal bank_pressed(player_id: int)
 
-const CHIP_ROW_HEIGHT := 40
+const CHIP_ROW_HEIGHT := 48
 const CHIP_ROW_MAX := 5   # shown side-by-side; more scroll horizontally
+# Space reserved above the chip row so a "popped" chip can rise into it
+# without getting clipped by the ScrollContainer's viewport.
+const CHIP_POP_ROOM := 18
 
 var player: PlayerState
 var display_name: String = "Player"
@@ -22,7 +26,7 @@ var _header: HBoxContainer
 var _avatar_lbl: Label
 var _name_lbl: Label
 var _tag_lbl: Label
-var _bank_pearl_dot: Panel
+var _bank_pearl_dot: Label
 var _bank_lbl: Label
 var _chip_scroll: ScrollContainer
 var _chip_row: HBoxContainer
@@ -55,40 +59,64 @@ func _build_header() -> void:
 	_tag_lbl.add_theme_font_size_override("font_size", 11)
 	_tag_lbl.add_theme_color_override("font_color", CardColors.HAZE)
 	_header.add_child(_tag_lbl)
+	# Bank sits right next to the name (no expand-spacer between them).
 
-	# Push bank to the right.
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_header.add_child(spacer)
-
-	_bank_pearl_dot = Panel.new()
-	_bank_pearl_dot.custom_minimum_size = Vector2(11, 11)
-	var dot_sb := StyleBoxFlat.new()
-	dot_sb.bg_color = CardColors.PEARL
-	dot_sb.corner_radius_top_left = 6
-	dot_sb.corner_radius_top_right = 6
-	dot_sb.corner_radius_bottom_left = 6
-	dot_sb.corner_radius_bottom_right = 6
-	_bank_pearl_dot.add_theme_stylebox_override("panel", dot_sb)
+	# Pearl currency badge — a "P" in dark ink on a rounded pearl-cream
+	# pill. Reads as a coin/chip glyph next to the numeric balance.
+	_bank_pearl_dot = Label.new()
+	_bank_pearl_dot.text = "P"
+	_bank_pearl_dot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bank_pearl_dot.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_bank_pearl_dot.custom_minimum_size = Vector2(22, 22)
+	_bank_pearl_dot.add_theme_font_size_override("font_size", 14)
+	_bank_pearl_dot.add_theme_color_override("font_color", CardColors.INK_DEEP)
+	var pill := StyleBoxFlat.new()
+	pill.bg_color = CardColors.PEARL
+	pill.corner_radius_top_left = 11
+	pill.corner_radius_top_right = 11
+	pill.corner_radius_bottom_left = 11
+	pill.corner_radius_bottom_right = 11
+	pill.border_color = CardColors.GOLD
+	pill.border_width_left = 1
+	pill.border_width_right = 1
+	pill.border_width_top = 1
+	pill.border_width_bottom = 1
+	pill.content_margin_left = 6
+	pill.content_margin_right = 6
+	pill.content_margin_top = 2
+	pill.content_margin_bottom = 2
+	_bank_pearl_dot.add_theme_stylebox_override("normal", pill)
+	_bank_pearl_dot.mouse_filter = Control.MOUSE_FILTER_STOP
+	_bank_pearl_dot.gui_input.connect(_on_bank_gui_input)
 	_header.add_child(_bank_pearl_dot)
 
 	_bank_lbl = Label.new()
 	_bank_lbl.add_theme_font_size_override("font_size", 13)
 	_bank_lbl.add_theme_color_override("font_color", CardColors.PEARL)
+	_bank_lbl.mouse_filter = Control.MOUSE_FILTER_STOP
+	_bank_lbl.gui_input.connect(_on_bank_gui_input)
 	_header.add_child(_bank_lbl)
 
 func _build_chip_row() -> void:
 	_chip_scroll = ScrollContainer.new()
 	_chip_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_chip_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_chip_scroll.custom_minimum_size = Vector2(0, CHIP_ROW_HEIGHT + 8)
+	_chip_scroll.custom_minimum_size = Vector2(0, CHIP_ROW_HEIGHT + 8 + CHIP_POP_ROOM)
 	_chip_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(_chip_scroll)
+
+	# Push chips down by CHIP_POP_ROOM so the pop-up animation has empty space
+	# above to rise into. Without the top margin the popped content clips
+	# against the ScrollContainer's viewport rect.
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_top", CHIP_POP_ROOM)
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chip_scroll.add_child(pad)
 
 	_chip_row = HBoxContainer.new()
 	_chip_row.add_theme_constant_override("separation", 4)
 	_chip_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_chip_scroll.add_child(_chip_row)
+	pad.add_child(_chip_row)
 
 func configure(name_: String, tag_: String, letter: String, color: Color, show_pearls: bool) -> void:
 	display_name = name_
@@ -134,6 +162,31 @@ func refresh() -> void:
 		_bank_pearl_dot.visible = false
 
 	_populate_chips()
+
+func _on_bank_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and player != null:
+			bank_pressed.emit(player.id)
+	elif event is InputEventScreenTouch:
+		var st := event as InputEventScreenTouch
+		if st.pressed and player != null:
+			bank_pressed.emit(player.id)
+
+func pop_realms(realm_names: Array) -> void:
+	if _chip_row == null:
+		return
+	for child in _chip_row.get_children():
+		if child is RealmChip:
+			var chip: RealmChip = child
+			chip.set_popped(realm_names.has(chip.realm_name))
+
+func clear_pops() -> void:
+	if _chip_row == null:
+		return
+	for child in _chip_row.get_children():
+		if child is RealmChip:
+			(child as RealmChip).set_popped(false)
 
 func _populate_chips() -> void:
 	for child in _chip_row.get_children():

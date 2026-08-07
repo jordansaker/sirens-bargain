@@ -33,6 +33,13 @@ var player_id: int
 # and no await ever fires.
 var human_refusal_hook: Callable
 
+# Optional coroutine invoked when this AI needs to collect payment from a human
+# payer. Signature is `(payer: PlayerState, receiver: PlayerState,
+# amount: int) -> Variant`. Return a Dictionary `{bank: Array[CardData],
+# realms: Array[CardData]}` to override; return null to fall back to the AI's
+# smart auto-pay. Unset in headless AI-vs-AI matches.
+var human_payment_hook: Callable
+
 func _init(pid: int) -> void:
 	player_id = pid
 
@@ -285,7 +292,7 @@ func _try_tribute(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		_settle_owed(gs, owed)
+		await _settle_owed(gs, owed)
 	return true
 
 func _all_opponents_can_pay(gs: GameState, amount: int) -> bool:
@@ -399,7 +406,7 @@ func _try_toll(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		_settle_owed(gs, owed)
+		await _settle_owed(gs, owed)
 	return true
 
 func _try_feast(tm: TurnManager, all_ais: Dictionary) -> bool:
@@ -416,7 +423,7 @@ func _try_feast(tm: TurnManager, all_ais: Dictionary) -> bool:
 	await _run_refusal_window(tm, all_ais)
 	var owed: Variant = tm.resolve_pending()
 	if owed is Dictionary:
-		_settle_owed(gs, owed)
+		await _settle_owed(gs, owed)
 	return true
 
 func _try_ride(tm: TurnManager, player: PlayerState) -> bool:
@@ -554,65 +561,19 @@ func _settle_owed(gs: GameState, owed: Dictionary) -> void:
 		if amount <= 0:
 			continue
 		var payer: PlayerState = gs.players[payer_id]
+		# Give the UI a chance to prompt a human payer for a manual pick
+		# (e.g. "no pearls in bank — choose which realm cards to spend").
+		# Hook returns null for payers it doesn't want to handle.
+		if human_payment_hook.is_valid():
+			var picks: Variant = await human_payment_hook.call(payer, receiver, amount)
+			if picks is Dictionary:
+				var from_bank: Array[CardData] = picks.get("bank", [] as Array[CardData])
+				var from_realms: Array[CardData] = picks.get("realms", [] as Array[CardData])
+				PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+				continue
 		_settle_smart(payer, receiver, amount)
 
-# Like PaymentResolver.settle_greedy, but preserves the payer's future
-# playability. Order: non-realm bank cards → banked realm cards → incomplete
-# laid realms → completed laid realms. Within each bucket, smallest first so
-# we don't overpay. Realm cards trapped in a bank can never be re-laid, so
-# spending banked realms *before* incomplete laid ones actually keeps the
-# game moving.
+# Delegates to PaymentResolver.settle_smart — same realm-layout-aware pool
+# order, same min-overpay-with-tiebreak selection.
 func _settle_smart(payer: PlayerState, receiver: PlayerState, amount: int) -> int:
-	if amount <= 0:
-		return 0
-	var from_bank: Array[CardData] = []
-	var from_realms: Array[CardData] = []
-	var remaining := amount
-
-	var bank_non_realm: Array[CardData] = []
-	var bank_realm: Array[CardData] = []
-	for c in payer.bank:
-		if c.type == CardData.Type.REALM or c.type == CardData.Type.WILD_REALM:
-			bank_realm.append(c)
-		else:
-			bank_non_realm.append(c)
-	bank_non_realm.sort_custom(func(a, b): return a.value < b.value)
-	bank_realm.sort_custom(func(a, b): return a.value < b.value)
-
-	for c in bank_non_realm:
-		if remaining <= 0:
-			break
-		from_bank.append(c)
-		remaining -= c.value
-	if remaining > 0:
-		for c in bank_realm:
-			if remaining <= 0:
-				break
-			from_bank.append(c)
-			remaining -= c.value
-
-	if remaining > 0:
-		var incomplete: Array[CardData] = []
-		var complete: Array[CardData] = []
-		for r in payer.realms.keys():
-			var stack: Array = payer.realms[r]
-			if payer.is_realm_complete(r):
-				for c in stack:
-					complete.append(c)
-			else:
-				for c in stack:
-					incomplete.append(c)
-		incomplete.sort_custom(func(a, b): return a.value < b.value)
-		complete.sort_custom(func(a, b): return a.value < b.value)
-		for c in incomplete:
-			if remaining <= 0:
-				break
-			from_realms.append(c)
-			remaining -= c.value
-		for c in complete:
-			if remaining <= 0:
-				break
-			from_realms.append(c)
-			remaining -= c.value
-
-	return PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+	return PaymentResolver.settle_smart(payer, receiver, amount)

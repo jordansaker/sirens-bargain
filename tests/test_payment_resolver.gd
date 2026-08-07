@@ -120,7 +120,19 @@ func test_settle_greedy_uses_bank_first() -> void:
 	assert_eq(moved, 3)
 	assert_eq((payer.realms["Coral Gardens"] as Array).size(), 1,
 		"Realms untouched while bank could cover")
-	assert_eq(payer.bank.size(), 1, "Greedy took smallest coins first")
+	# Bank pool prefers keeping large denominations — spends 1+2, keeps the 3.
+	assert_eq(payer.bank.size(), 1, "3-pearl preserved for future single-shot debts")
+
+func test_settle_greedy_minimises_overpayment() -> void:
+	# Regression: a 7 P bank paying 4 P used to zero the bank via smallest-first
+	# greedy that overshot on the final coin. The optimal subset leaves 3 P.
+	var payer := PlayerState.new(0)
+	var receiver := PlayerState.new(1)
+	_stock_bank(payer, [3, 4] as Array[int])
+	var moved := PaymentResolver.settle_greedy(payer, receiver, 4)
+	assert_eq(moved, 4, "Exact match preferred over paying whole bank")
+	assert_eq(payer.total_bank_value(), 3, "3 P left in payer's bank")
+	assert_eq(receiver.total_bank_value(), 4)
 
 func test_settle_greedy_raids_realms_when_bank_short() -> void:
 	var payer := PlayerState.new(0)
@@ -146,3 +158,65 @@ func test_total_available_sums_bank_and_realms() -> void:
 	p.hand.append(r1)
 	p.play_realm(r1, "Sunken Temple")
 	assert_eq(PaymentResolver.total_available(p), 9)
+
+# ---- settle_smart tiebreaks ----
+
+func test_settle_smart_bank_keeps_large_denominations() -> void:
+	# Bank [1, 2, 3] paying 3 → picks {1, 2} to preserve the 3-pearl for a
+	# future single-shot debt. "Keep large denominations" tiebreak.
+	var payer := PlayerState.new(0)
+	var receiver := PlayerState.new(1)
+	_stock_bank(payer, [1, 2, 3] as Array[int])
+	var moved := PaymentResolver.settle_smart(payer, receiver, 3)
+	assert_eq(moved, 3)
+	assert_eq(payer.bank.size(), 1, "3-pearl preserved")
+	assert_eq(payer.total_bank_value(), 3)
+
+func test_settle_smart_realm_pool_protects_set_progress() -> void:
+	# Realm with [1P, 2P, 3P] cards, debt 3 → picks the single {3} instead of
+	# {1, 2} so the realm loses only one card of progress toward completion.
+	var payer := PlayerState.new(0)
+	var receiver := PlayerState.new(1)
+	# Sunken Temple target-size 3; play three cards so pool = [1, 2, 3].
+	for v in [1, 2, 3]:
+		var c := _realm("temple_%d" % v, "Sunken Temple", v)
+		payer.hand.append(c)
+		payer.play_realm(c, "Sunken Temple")
+	var moved := PaymentResolver.settle_smart(payer, receiver, 3)
+	assert_eq(moved, 3)
+	var left: Array = payer.realms["Sunken Temple"]
+	assert_eq(left.size(), 2, "Only one card taken — realm keeps 2/3 progress")
+
+func test_settle_smart_skips_zero_value_cards() -> void:
+	# A 0-value card in a realm shouldn't get shipped as a courtesy giveaway
+	# when the debt can be satisfied without it.
+	var payer := PlayerState.new(0)
+	var receiver := PlayerState.new(1)
+	var conch := _realm("conch", "Sunken Temple", 0)
+	var pearl := _realm("gem", "Sunken Temple", 3)
+	for c in [conch, pearl]:
+		payer.hand.append(c)
+		payer.play_realm(c, "Sunken Temple")
+	var moved := PaymentResolver.settle_smart(payer, receiver, 2)
+	assert_eq(moved, 3, "Pays with the 3-value card, overpaying by 1")
+	var left: Array = payer.realms["Sunken Temple"]
+	assert_eq(left.size(), 1)
+	assert_eq((left[0] as CardData).id, "conch", "Zero-value card stays put")
+
+func test_settle_smart_prefers_lower_progress_realm() -> void:
+	# Two realms both able to cover a 2 P debt:
+	#   - Sunken Temple (3-size): 1 card at 3 P → 1/3 progress
+	#   - Kelp Forest (2-size): 1 card at 3 P → 1/2 progress
+	# Sunken Temple has lower progress → its pool is drained first, so it
+	# loses the card. Kelp Forest is preserved.
+	var payer := PlayerState.new(0)
+	var receiver := PlayerState.new(1)
+	var temple := _realm("t1", "Sunken Temple", 3)
+	var kelp := _realm("k1", "Kelp Forest", 3)
+	for c in [temple, kelp]:
+		payer.hand.append(c)
+	payer.play_realm(temple, "Sunken Temple")
+	payer.play_realm(kelp, "Kelp Forest")
+	PaymentResolver.settle_smart(payer, receiver, 2)
+	assert_eq((payer.realms["Sunken Temple"] as Array).size(), 0)
+	assert_eq((payer.realms["Kelp Forest"] as Array).size(), 1, "Nearer-complete realm untouched")

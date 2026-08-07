@@ -18,6 +18,10 @@ config/name="Siren's Bargain"
 config/description="A mermaid-themed card game of realms, rent, and tributes."
 run/main_scene="res://scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://assets/icons/icon-512.png"
+boot_splash/image="res://assets/icons/icon-512.png"
+boot_splash/bg_color=Color(0.039, 0.086, 0.149, 1)
+boot_splash/use_filter=true
 
 [autoload]
 

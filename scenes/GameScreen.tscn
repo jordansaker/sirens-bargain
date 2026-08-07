@@ -1,9 +1,23 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/GameScreen.gd" id="1_gamescreen"]
 [ext_resource type="PackedScene" path="res://scenes/PlayerBoardView.tscn" id="2_opponent"]
 [ext_resource type="PackedScene" path="res://scenes/PlayerBoardView.tscn" id="3_player"]
 [ext_resource type="Texture2D" path="res://assets/art/cards/back_card.png" id="4_back_card"]
+
+[sub_resource type="StyleBoxFlat" id="GameOverPanelStyle"]
+bg_color = Color(0.055, 0.114, 0.184, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.788, 0.635, 0.153, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.6)
+shadow_size = 12
 
 [node name="GameScreen" type="Control"]
 layout_mode = 3
@@ -49,7 +63,7 @@ theme_override_constants/separation = 14
 alignment = 1
 
 [node name="DrawPileBox" type="Control" parent="Root/GameCol/MidTable"]
-custom_minimum_size = Vector2(72, 100)
+custom_minimum_size = Vector2(72, 84)
 layout_mode = 2
 
 [node name="DrawTexture" type="TextureRect" parent="Root/GameCol/MidTable/DrawPileBox"]
@@ -101,7 +115,7 @@ theme_override_font_sizes/font_size = 12
 theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 
 [node name="DiscardPileBox" type="Control" parent="Root/GameCol/MidTable"]
-custom_minimum_size = Vector2(72, 100)
+custom_minimum_size = Vector2(72, 84)
 layout_mode = 2
 
 [node name="DiscardArt" type="TextureRect" parent="Root/GameCol/MidTable/DiscardPileBox"]
@@ -174,23 +188,46 @@ horizontal_alignment = 1
 theme_override_font_sizes/font_size = 11
 theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
 
-[node name="HandScroll" type="ScrollContainer" parent="Root/GameCol"]
+[node name="HandRowContainer" type="HBoxContainer" parent="Root/GameCol"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 340)
+
+[node name="HandScroll" type="ScrollContainer" parent="Root/GameCol/HandRowContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 280)
 horizontal_scroll_mode = 2
 vertical_scroll_mode = 0
 
-[node name="HandRow" type="HBoxContainer" parent="Root/GameCol/HandScroll"]
+[node name="HandLogGap" type="Control" parent="Root/GameCol/HandRowContainer"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+
+[node name="HandRow" type="Control" parent="Root/GameCol/HandRowContainer/HandScroll"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 280)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 8
-theme_override_constants/separation = 6
-alignment = 1
 
 [node name="Actions" type="HBoxContainer" parent="Root/GameCol"]
 layout_mode = 2
 theme_override_constants/separation = 8
+
+[node name="FanButton" type="Button" parent="Root/GameCol/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 44)
+layout_mode = 2
+toggle_mode = true
+text = "Fan"
+theme_override_font_sizes/font_size = 13
+
+[node name="ZoomButton" type="Button" parent="Root/GameCol/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(88, 44)
+layout_mode = 2
+toggle_mode = true
+text = "Zoom: off"
+theme_override_font_sizes/font_size = 13
 
 [node name="BankButton" type="Button" parent="Root/GameCol/Actions"]
 unique_name_in_owner = true
@@ -216,30 +253,60 @@ size_flags_horizontal = 3
 text = "End turn"
 theme_override_font_sizes/font_size = 13
 
-[node name="LogCol" type="VBoxContainer" parent="Root"]
+[node name="LogGap" type="Control" parent="Root/GameCol/Actions"]
+custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
-custom_minimum_size = Vector2(140, 0)
-theme_override_constants/separation = 4
 
-[node name="LogTitle" type="Label" parent="Root/LogCol"]
+[node name="LogPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -260.0
+offset_top = -190.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 0
+grow_vertical = 0
+self_modulate = Color(1, 1, 1, 0.85)
+
+[node name="LogMargin" type="MarginContainer" parent="LogPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_bottom = 6
+
+[node name="LogVBox" type="VBoxContainer" parent="LogPanel/LogMargin"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="LogTitle" type="Label" parent="LogPanel/LogMargin/LogVBox"]
 layout_mode = 2
 text = "Log"
 horizontal_alignment = 1
-theme_override_font_sizes/font_size = 12
-theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
+theme_override_font_sizes/font_size = 11
+theme_override_colors/font_color = Color(0.788, 0.635, 0.153, 1)
 
-[node name="LogScroll" type="ScrollContainer" parent="Root/LogCol"]
+[node name="LogScroll" type="ScrollContainer" parent="LogPanel/LogMargin/LogVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 vertical_scroll_mode = 2
 
-[node name="LogList" type="VBoxContainer" parent="Root/LogCol/LogScroll"]
+[node name="LogList" type="VBoxContainer" parent="LogPanel/LogMargin/LogVBox/LogScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 4
+theme_override_constants/separation = 3
 
 [node name="ActionMenu" type="Panel" parent="."]
 unique_name_in_owner = true
@@ -359,10 +426,24 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="PeekClose" type="Button" parent="RealmPeek/PeekMargin/PeekVBox"]
+[node name="PeekActions" type="HBoxContainer" parent="RealmPeek/PeekMargin/PeekVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="PeekConfirm" type="Button" parent="RealmPeek/PeekMargin/PeekVBox/PeekActions"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Confirm"
+theme_override_font_sizes/font_size = 14
+
+[node name="PeekClose" type="Button" parent="RealmPeek/PeekMargin/PeekVBox/PeekActions"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+size_flags_horizontal = 3
 text = "Close"
 theme_override_font_sizes/font_size = 14
 
@@ -531,7 +612,7 @@ offset_top = 12.0
 offset_right = -12.0
 offset_bottom = 44.0
 grow_horizontal = 0
-text = "◀ Menu"
+text = "Menu"
 theme_override_font_sizes/font_size = 13
 
 [node name="TurnBanner" type="Label" parent="."]
@@ -563,7 +644,7 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.75)
+color = Color(0, 0, 0, 0.9)
 mouse_filter = 0
 
 [node name="GameOverPanel" type="Panel" parent="."]
@@ -581,6 +662,7 @@ offset_right = 220.0
 offset_bottom = 220.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_styles/panel = SubResource("GameOverPanelStyle")
 
 [node name="GameOverMargin" type="MarginContainer" parent="GameOverPanel"]
 layout_mode = 1

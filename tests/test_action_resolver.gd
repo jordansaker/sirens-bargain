@@ -32,14 +32,25 @@ func test_ride_the_current_draws_two_cards() -> void:
 	var gs := _game(2, _deck(10))
 	var tm := TurnManager.new(gs)
 	var player := gs.current_player()
-	# Filler so removing Ride doesn't empty the hand and trigger the
-	# empty-hand refill on top of Ride's own +2 draw.
+	# Filler so we can distinguish "Ride's +2" from the empty-hand rule.
 	player.hand.append(_pearl("filler"))
 	var ride := _ride()
 	player.hand.append(ride)
 	assert_true(tm.play_ride_the_current(ride))
 	assert_eq(player.hand.size(), 3, "Card left hand, filler still there, 2 drawn")
 	assert_false(player.hand.has(ride))
+
+func test_ride_the_current_as_last_card_skips_empty_refill() -> void:
+	# Playing Ride as your only card should draw exactly 2 (Ride's own effect),
+	# NOT 2 + a 5-card empty-hand refill on top. The +2 counts as the refill.
+	var gs := _game(2, _deck(10))
+	var tm := TurnManager.new(gs)
+	var player := gs.current_player()
+	var ride := _ride()
+	player.hand.append(ride)
+	assert_true(tm.play_ride_the_current(ride))
+	assert_eq(player.hand.size(), 2,
+		"Ride as last card = 2 in hand (empty-hand rule doesn't stack on Ride)")
 
 func test_ride_the_current_discards_the_action() -> void:
 	var gs := _game(2, _deck(10))
@@ -300,18 +311,17 @@ func test_toll_opponent_pays_full_via_settle_greedy() -> void:
 	var tm := TurnManager.new(gs)
 	var charger := gs.current_player()
 	var victim := gs.players[1]
-	# Bank of [5, 3] → smallest-first takes 3 then 5, overpaying by 3.
-	# This preserves the pattern (smallest coins go first) at the cost of
-	# some overpay — the payer keeps high-denomination cards only when the
-	# small change already covers the debt.
+	# Bank of [5, 3], toll owes 5. Optimal subset picks the exact-match 5-pearl
+	# and leaves the 3 behind — the min-overpay selection avoids zeroing a
+	# victim who could pay the debt cleanly.
 	victim.bank.append_array([_pearl("v1", 5), _pearl("v2", 3)])
 	var toll := _toll()
 	charger.hand.append(toll)
 	var owed := tm.play_toll_of_the_tides(toll, 1)
 	var paid := PaymentResolver.settle_greedy(victim, charger, int(owed[1]))
-	assert_eq(paid, 8, "Greedy takes smallest coins first, no change given")
-	assert_eq(victim.bank.size(), 0)
-	assert_eq(charger.total_bank_value(), 8)
+	assert_eq(paid, 5, "Exact-match subset preferred over whole-bank sweep")
+	assert_eq(victim.bank.size(), 1, "3-pearl kept as change")
+	assert_eq(charger.total_bank_value(), 5)
 
 func test_toll_opponent_keeps_big_coin_when_small_change_covers() -> void:
 	var gs := _game(2, [] as Array[CardData])

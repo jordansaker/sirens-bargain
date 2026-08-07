@@ -103,6 +103,28 @@ func test_tribute_requires_charger_to_own_the_realm() -> void:
 	assert_true(owed.is_empty(), "Charger owns no Sunken Temple cards")
 	assert_eq(tm.plays_this_turn, 0)
 
+func test_tribute_rejects_realm_with_only_rainbow_conch() -> void:
+	# Rainbow Conch alone doesn't establish ownership — you need at least
+	# one real realm or wild card in the set to charge rent.
+	var gs := _game(2)
+	var tm := TurnManager.new(gs)
+	var charger := gs.current_player()
+	# Lay a Rainbow Conch (all-realm wild) into Sunken Temple.
+	var conch := CardData.new()
+	conch.id = "wild_rainbow_conch_test"
+	conch.name = "Rainbow Conch"
+	conch.type = CardData.Type.WILD_REALM
+	conch.value = 0
+	conch.realms = Realms.all_realms()
+	charger.hand.append(conch)
+	charger.play_realm(conch, "Sunken Temple")
+	var trib := _tribute("t1", ["Shipwreck Cove", "Sunken Temple"] as Array[String])
+	charger.hand.append(trib)
+	var owed := tm.charge_tribute(trib, "Sunken Temple")
+	assert_true(owed.is_empty(), "Rainbow Conch alone can't anchor a tribute")
+	assert_eq(tm.plays_this_turn, 0, "Play not consumed")
+	assert_true(charger.hand.has(trib), "Tribute card stays in hand")
+
 # ---- Siren's Toll ----
 
 func test_sirens_toll_charges_one_chosen_player() -> void:

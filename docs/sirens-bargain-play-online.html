@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Siren's Bargain — Play online</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600&display=swap');
+  :root{--navy:#0B1D33;--navy-deep:#06111F;--gold:#C9A227;--gold-lt:#E4C25A;--gold-d:#A5811C;
+    --pearl:#EDE6D4;--haze:#9DB6C4;--mist:#C4D6E2;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(120% 90% at 50% -10%,#17395F 0%,#0B1D33 45%,#06111F 100%);color:var(--pearl);min-height:100%;overflow-x:hidden;}
+  .rays{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0;}
+  .ray{position:absolute;top:-20%;width:34%;height:150%;background:linear-gradient(180deg,rgba(201,162,39,.08),transparent);filter:blur(7px);mix-blend-mode:screen;}
+  .ray.r1{left:6%;transform:rotate(9deg);}.ray.r3{left:72%;transform:rotate(12deg);width:24%;}
+
+  .wrap{position:relative;z-index:1;max-width:480px;margin:0 auto;padding:34px 22px 60px;min-height:100%;display:flex;flex-direction:column;}
+  h1{font-family:'Cinzel',Georgia,serif;font-size:clamp(30px,7vw,42px);font-weight:600;text-align:center;letter-spacing:.03em;
+    color:var(--pearl);text-shadow:0 2px 18px rgba(0,0,0,.5);margin-bottom:24px;}
+
+  .lbl{font-size:13px;color:var(--haze);margin:0 2px 10px;}
+  .seclbl{font-family:'Cinzel',Georgia,serif;font-size:16px;font-weight:600;color:var(--gold-lt);letter-spacing:.03em;margin:26px 2px 12px;}
+
+  .panel{background:rgba(11,29,51,.72);border:1px solid rgba(201,162,39,.22);border-radius:14px;padding:14px;backdrop-filter:blur(6px);}
+  .namerow{display:flex;gap:12px;}
+  input{font:inherit;font-size:15px;color:var(--pearl);background:rgba(255,255,255,.05);
+    border:1px solid rgba(201,162,39,.25);border-radius:10px;padding:13px 15px;outline:none;width:100%;}
+  input::placeholder{color:var(--haze);opacity:.8;}
+  input:focus{border-color:rgba(201,162,39,.6);background:rgba(255,255,255,.08);}
+  .name{flex:1;min-width:0;} .age{flex:0 0 84px;width:84px;text-align:center;}
+  .code{letter-spacing:.5em;text-transform:uppercase;font-size:18px;font-weight:600;}
+
+  .btn{font:inherit;font-size:16px;font-weight:600;letter-spacing:.02em;border-radius:12px;cursor:pointer;padding:15px;border:1px solid transparent;width:100%;
+    transition:transform .08s ease,background .2s ease,box-shadow .2s ease,border-color .2s ease;}
+  .btn:active{transform:translateY(1px);}
+  .btn.prim{color:#2A1F07;background:linear-gradient(90deg,var(--gold-d),var(--gold-lt),var(--gold-d));background-size:200% 100%;box-shadow:0 6px 22px rgba(201,162,39,.35);}
+  .btn.prim:hover{background-position:100% 0;box-shadow:0 8px 28px rgba(201,162,39,.5);}
+  .btn.strong{background:rgba(201,162,39,.10);border-color:rgba(201,162,39,.55);color:var(--pearl);}
+  .btn.strong:hover{background:rgba(201,162,39,.18);border-color:rgba(201,162,39,.8);}
+  .btn.ghost{background:rgba(255,255,255,.04);border-color:rgba(201,162,39,.3);color:var(--mist);}
+  .btn.ghost:hover{background:rgba(201,162,39,.1);border-color:rgba(201,162,39,.55);}
+
+  .joinrow{display:flex;gap:10px;}
+  .joinrow .code{flex:1;} .joinrow .btn{flex:0 0 110px;width:110px;}
+  .spacer{flex:1;min-height:24px;}
+</style>
+</head>
+<body>
+  <div class="rays"><div class="ray r1"></div><div class="ray r3"></div></div>
+
+  <div class="wrap">
+    <h1>Play online</h1>
+
+    <div class="lbl">Your details (needed to start &mdash; youngest goes first)</div>
+    <div class="panel">
+      <div class="namerow">
+        <input class="name" placeholder="Name">
+        <input class="age" type="number" min="1" max="120" inputmode="numeric" placeholder="Age">
+      </div>
+    </div>
+
+    <div class="seclbl">Host a match</div>
+    <button class="btn prim" onclick="console.log('create room')">Create room</button>
+
+    <div class="seclbl">Join with a code</div>
+    <div class="joinrow">
+      <input class="code" maxlength="6" placeholder="ABCDE">
+      <button class="btn strong" onclick="console.log('join')">Join</button>
+    </div>
+
+    <div class="spacer"></div>
+    <button class="btn ghost" onclick="history.back()">Back to main menu</button>
+  </div>
+</body>
+</html>

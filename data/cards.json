@@ -116,6 +116,6 @@
   {"id":"action_ride_the_current_06","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current","art":"res://assets/art/cards/ride-the-current.png"},
   {"id":"action_ride_the_current_07","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current","art":"res://assets/art/cards/ride-the-current.png"},
   {"id":"action_ride_the_current_08","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current","art":"res://assets/art/cards/ride-the-current.png"},
-  {"id":"action_ride_the_current_09","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current"},
-  {"id":"action_ride_the_current_10","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current"}
+  {"id":"action_ride_the_current_09","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current","art":"res://assets/art/cards/ride-the-current.png"},
+  {"id":"action_ride_the_current_10","type":"ACTION","name":"Ride the Current","value":1,"action_effect":"ride_the_current","art":"res://assets/art/cards/ride-the-current.png"}
 ]

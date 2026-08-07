@@ -42,6 +42,7 @@ const KIND_INIT_FEAST := "initiate_feast"
 const KIND_INIT_TRIBUTE := "initiate_tribute"
 const KIND_REFUSE := "refuse"
 const KIND_RESOLVE := "resolve"
+const KIND_SETTLE_PAYMENT := "settle_payment"
 const KIND_END_TURN := "end_turn"
 
 # Serialise a GameState + starting hands into a deck_init payload. Called

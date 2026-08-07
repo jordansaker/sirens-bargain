@@ -40,6 +40,37 @@ horizontal_alignment = 1
 theme_override_font_sizes/font_size = 32
 theme_override_colors/font_color = Color(0.929, 0.902, 0.831, 1)
 
+[node name="ProfileSection" type="VBoxContainer" parent="Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ProfileLabel" type="Label" parent="Content/ProfileSection"]
+layout_mode = 2
+text = "Your details (needed to start — youngest goes first)"
+theme_override_font_sizes/font_size = 12
+theme_override_colors/font_color = Color(0.615, 0.713, 0.769, 1)
+
+[node name="ProfileRow" type="HBoxContainer" parent="Content/ProfileSection"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameField" type="LineEdit" parent="Content/ProfileSection/ProfileRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Name"
+max_length = 20
+theme_override_font_sizes/font_size = 15
+
+[node name="AgeField" type="LineEdit" parent="Content/ProfileSection/ProfileRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 44)
+layout_mode = 2
+placeholder_text = "Age"
+max_length = 3
+theme_override_font_sizes/font_size = 15
+
 [node name="HostSection" type="VBoxContainer" parent="Content"]
 layout_mode = 2
 theme_override_constants/separation = 8

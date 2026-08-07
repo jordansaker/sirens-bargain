@@ -13,15 +13,22 @@ extends PanelContainer
 
 signal selected(card: CardData)
 
-const WIDTH := 220
-const HEIGHT := 308
-const LIFT_PX := 28
+const WIDTH := 180
+const HEIGHT := 252
+const LIFT_PX := 24
 
-const BANNER_HEIGHT := 40
+const BANNER_HEIGHT := 32
 
 var card: CardData:
 	set(value):
+		if card == value:
+			return
 		card = value
+		# Drop the previous art before loading the next so its texture can be
+		# reclaimed immediately instead of hanging around until _refresh's
+		# assignment overwrites it.
+		if _art != null:
+			_art.texture = null
 		_refresh()
 
 var selected_state: bool = false:
@@ -30,7 +37,6 @@ var selected_state: bool = false:
 			return
 		selected_state = value
 		_refresh_style()
-		_refresh_size()
 
 var _banner: ColorRect
 var _title_label: Label
@@ -49,6 +55,13 @@ func _ready() -> void:
 	_build_children()
 	_refresh_style()
 	_refresh()
+
+func _exit_tree() -> void:
+	# Explicitly release the art texture so its RAM comes back without waiting
+	# for the whole CardView to be garbage-collected — matters on the web
+	# build where memory ceiling is tight.
+	if _art != null:
+		_art.texture = null
 
 func _build_children() -> void:
 	_placeholder_col = VBoxContainer.new()
@@ -74,18 +87,18 @@ func _build_children() -> void:
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_title_label.add_theme_font_size_override("font_size", 20)
+	_title_label.add_theme_font_size_override("font_size", 17)
 	_title_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(_title_label)
 
 	_value_label = Label.new()
 	_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_value_label.add_theme_font_size_override("font_size", 17)
+	_value_label.add_theme_font_size_override("font_size", 15)
 	body.add_child(_value_label)
 
 	_hint_label = Label.new()
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_hint_label.add_theme_font_size_override("font_size", 14)
+	_hint_label.add_theme_font_size_override("font_size", 13)
 	_hint_label.visible = false
 	body.add_child(_hint_label)
 
@@ -106,8 +119,10 @@ func set_highlighted(on: bool) -> void:
 	selected_state = on
 
 func _refresh_size() -> void:
-	var h: int = HEIGHT + (LIFT_PX if selected_state else 0)
-	custom_minimum_size = Vector2(WIDTH, h)
+	# Base card box only. Callers that need to lift a selected card should
+	# animate `position.y` externally — this used to bump min height by
+	# LIFT_PX, which conflicted with the manually positioned hand fan.
+	custom_minimum_size = Vector2(WIDTH, HEIGHT)
 
 func _refresh() -> void:
 	if _title_label == null:
@@ -135,7 +150,7 @@ func _refresh() -> void:
 		_placeholder_col.visible = true
 	_banner.color = CardColors.for_card(card)
 	_title_label.text = _short_name_for(card)
-	_value_label.text = "%d ◈" % card.value if card.value > 0 else ""
+	_value_label.text = "%d P" % card.value if card.value > 0 else ""
 	_hint_label.visible = selected_state and _art != null and not _art.visible
 	_hint_label.text = "tap Play / Bank"
 
@@ -144,7 +159,12 @@ static func _load_card_art(path: String) -> Texture2D:
 		return null
 	if not ResourceLoader.exists(path):
 		return null
-	var res := load(path)
+	# CACHE_MODE_IGNORE bypasses Godot's global resource cache so each
+	# CardView holds its own texture instance. When the CardView is freed
+	# (or its `card` is swapped) the texture drops its last reference and
+	# gets released — otherwise every unique card ever shown accumulates in
+	# the cache, which pushes the web build past its wasm heap budget.
+	var res := ResourceLoader.load(path, "Texture2D", ResourceLoader.CACHE_MODE_IGNORE)
 	if res is Texture2D:
 		return res
 	return null

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Siren's Bargain — loading</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&display=swap');
+  :root{
+    --navy:#0B1D33; --navy-deep:#06111F; --gold:#C9A227; --gold-lt:#E4C25A;
+    --pearl:#EDE6D4; --pearl-lt:#FBF7EC; --haze:#9DB6C4;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--navy-deep); overflow:hidden;
+  }
+
+  /* full-screen overlay — this is what you show while loading, then fade out */
+  #loader{
+    position:fixed; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:
+      radial-gradient(120% 90% at 50% -10%, #17395F 0%, #0B1D33 45%, #06111F 100%);
+    transition:opacity .6s ease;
+  }
+  /* caustic light rays from the surface */
+  .rays{position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .ray{position:absolute; top:-20%; width:38%; height:150%;
+    background:linear-gradient(180deg, rgba(201,162,39,.14), rgba(201,162,39,0));
+    transform-origin:top center; filter:blur(6px); mix-blend-mode:screen;
+    animation:sway 9s ease-in-out infinite;}
+  .ray.r1{left:8%;  transform:rotate(9deg);  animation-delay:0s;}
+  .ray.r2{left:40%; transform:rotate(-6deg); width:30%; animation-delay:-3s;}
+  .ray.r3{left:70%; transform:rotate(12deg); width:26%; animation-delay:-6s;}
+  @keyframes sway{0%,100%{opacity:.5; transform:translateX(-6px) rotate(9deg);}
+                  50%{opacity:1; transform:translateX(6px) rotate(9deg);}}
+
+  /* rising bubbles */
+  .bubbles{position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .bubble{position:absolute; bottom:-40px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(251,247,236,.9), rgba(237,230,212,.15) 60%, rgba(237,230,212,0) 70%);
+    animation:rise linear infinite;}
+  @keyframes rise{
+    0%{transform:translateY(0) translateX(0); opacity:0;}
+    10%{opacity:.8;}
+    90%{opacity:.5;}
+    100%{transform:translateY(-108vh) translateX(var(--drift)); opacity:0;}}
+
+  .stack{position:relative; display:flex; flex-direction:column; align-items:center; z-index:2;}
+
+  .emblem{width:132px; height:132px; filter:drop-shadow(0 6px 22px rgba(201,162,39,.35));
+    animation:bob 4.5s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-8px);}}
+
+  .title{
+    font-family:'Cinzel', Georgia, 'Times New Roman', serif;
+    font-weight:600; font-size:clamp(30px,7vw,46px); letter-spacing:.04em;
+    color:var(--pearl); margin-top:18px; text-align:center; line-height:1.05;
+    text-shadow:0 2px 18px rgba(0,0,0,.5);}
+  .title .amp{color:var(--gold-lt);}
+  .tagline{
+    margin-top:8px; font-size:clamp(11px,2.6vw,13px); letter-spacing:.34em;
+    text-transform:uppercase; color:var(--haze);}
+
+  .progress-wrap{margin-top:40px; width:min(320px,72vw);}
+  .track{height:6px; border-radius:999px; background:rgba(255,255,255,.10);
+    overflow:hidden; box-shadow:inset 0 0 0 1px rgba(201,162,39,.25);}
+  .fill{height:100%; width:0%; border-radius:999px;
+    background:linear-gradient(90deg, #A5811C, var(--gold-lt), #A5811C);
+    background-size:200% 100%; animation:shimmer 1.6s linear infinite;
+    transition:width .3s ease;}
+  @keyframes shimmer{0%{background-position:0 0;}100%{background-position:200% 0;}}
+  .status{display:flex; justify-content:space-between; margin-top:12px;
+    font-size:12px; color:var(--haze); letter-spacing:.02em;}
+  .status .tip{opacity:0; transition:opacity .4s ease;}
+  .status .pct{color:var(--pearl); font-variant-numeric:tabular-nums;}
+
+  @media (prefers-reduced-motion: reduce){
+    .ray,.bubble,.emblem,.fill{animation:none;}
+  }
+</style>
+</head>
+<body>
+  <div id="loader" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Loading Siren's Bargain">
+    <div class="rays"><div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div></div>
+    <div class="bubbles" id="bubbles"></div>
+
+    <div class="stack">
+      <!-- scallop + pearl emblem -->
+      <svg class="emblem" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#E4C25A"/><stop offset="1" stop-color="#A5811C"/>
+          </linearGradient>
+          <radialGradient id="pl" cx="0.4" cy="0.35" r="0.7">
+            <stop offset="0" stop-color="#FBF7EC"/><stop offset="1" stop-color="#CFC6AE"/>
+          </radialGradient>
+        </defs>
+        <path d="M32 50 L13 27 A24 24 0 0 1 51 27 Z" fill="url(#sh)" stroke="#A5811C" stroke-width="1"/>
+        <g stroke="#0B1D33" stroke-width="1.6" stroke-linecap="round">
+          <line x1="32" y1="50" x2="13" y2="27"/><line x1="32" y1="50" x2="20" y2="19.5"/>
+          <line x1="32" y1="50" x2="26" y2="16"/><line x1="32" y1="50" x2="32" y2="15"/>
+          <line x1="32" y1="50" x2="38" y2="16"/><line x1="32" y1="50" x2="44" y2="19.5"/>
+          <line x1="32" y1="50" x2="51" y2="27"/>
+        </g>
+        <path d="M13 27 Q17 31 21 27 Q25 31 29 27 Q32 30.5 35 27 Q39 31 43 27 Q47 31 51 27"
+              fill="none" stroke="#A5811C" stroke-width="1.2"/>
+        <circle cx="32" cy="50" r="6.2" fill="url(#pl)" stroke="#A5811C" stroke-width="0.8"/>
+        <circle cx="29.6" cy="47.8" r="1.7" fill="#FBF7EC"/>
+      </svg>
+
+      <div class="title">Siren<span class="amp">'</span>s Bargain</div>
+      <div class="tagline">Tides &middot; Treasure &middot; Treachery</div>
+
+      <div class="progress-wrap">
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="status">
+          <span class="tip" id="tip">Charting the currents…</span>
+          <span class="pct" id="pct">0%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- bubbles ---
+  const bc=document.getElementById('bubbles');
+  for(let i=0;i<16;i++){
+    const b=document.createElement('div'); b.className='bubble';
+    const s=4+Math.random()*12;
+    b.style.width=b.style.height=s+'px';
+    b.style.left=(Math.random()*100)+'%';
+    b.style.setProperty('--drift',(Math.random()*60-30)+'px');
+    b.style.animationDuration=(6+Math.random()*7)+'s';
+    b.style.animationDelay=(-Math.random()*10)+'s';
+    bc.appendChild(b);
+  }
+
+  // --- rotating flavour tips ---
+  const tips=['Charting the currents…','Shuffling the tides…','Polishing the pearls…',
+              'Raising the coral…','Waking the kraken…','Counting the treasure…'];
+  const tipEl=document.getElementById('tip'); let ti=0;
+  function showTip(){ tipEl.style.opacity=0;
+    setTimeout(()=>{ tipEl.textContent=tips[ti%tips.length]; ti++; tipEl.style.opacity=1; },300); }
+  showTip(); setInterval(showTip,1900);
+
+  // --- progress ---
+  const fill=document.getElementById('fill'), pct=document.getElementById('pct'),
+        loader=document.getElementById('loader');
+  let p=0;
+  function render(v){ v=Math.max(0,Math.min(100,v)); fill.style.width=v+'%';
+    pct.textContent=Math.round(v)+'%'; loader.setAttribute('aria-valuenow',Math.round(v)); }
+
+  /* HOOK: in the real game, call window.setLoadProgress(0..100) as assets load,
+     then window.finishLoading() when done. The demo loop below just simulates it. */
+  window.setLoadProgress=v=>{ p=v; render(p); };
+  window.finishLoading=()=>{ render(100);
+    setTimeout(()=>{ loader.style.opacity=0;
+      setTimeout(()=>loader.style.display='none',600); },350); };
+
+  // demo auto-progress (remove when wiring to real asset loading)
+  const demo=setInterval(()=>{ p+=Math.random()*9;
+    if(p>=100){ p=100; clearInterval(demo); render(p); setTimeout(window.finishLoading,500); }
+    else render(p);
+  },260);
+</script>
+</body>
+</html>

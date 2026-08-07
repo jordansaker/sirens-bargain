@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Siren's Bargain — menu</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&display=swap');
+  :root{
+    --navy:#0B1D33; --navy-deep:#06111F; --gold:#C9A227; --gold-lt:#E4C25A; --gold-d:#A5811C;
+    --pearl:#EDE6D4; --pearl-lt:#FBF7EC; --haze:#9DB6C4; --panel:#14304F;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--navy-deep); overflow:hidden;}
+
+  #menu{position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(120% 90% at 50% -10%, #17395F 0%, #0B1D33 45%, #06111F 100%);}
+
+  .rays{position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .ray{position:absolute; top:-20%; width:38%; height:150%;
+    background:linear-gradient(180deg, rgba(201,162,39,.12), rgba(201,162,39,0));
+    filter:blur(6px); mix-blend-mode:screen; animation:sway 10s ease-in-out infinite;}
+  .ray.r1{left:8%; transform:rotate(9deg);} .ray.r2{left:40%; transform:rotate(-6deg); width:30%; animation-delay:-4s;}
+  .ray.r3{left:70%; transform:rotate(12deg); width:26%; animation-delay:-7s;}
+  @keyframes sway{0%,100%{opacity:.45; transform:translateX(-6px) rotate(9deg);}50%{opacity:.9; transform:translateX(6px) rotate(9deg);}}
+
+  .bubbles{position:absolute; inset:0; overflow:hidden; pointer-events:none;}
+  .bubble{position:absolute; bottom:-40px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, rgba(251,247,236,.85), rgba(237,230,212,.12) 60%, rgba(237,230,212,0) 70%);
+    animation:rise linear infinite;}
+  @keyframes rise{0%{transform:translateY(0) translateX(0); opacity:0;}10%{opacity:.7;}90%{opacity:.4;}
+    100%{transform:translateY(-108vh) translateX(var(--drift)); opacity:0;}}
+
+  .sound{position:absolute; top:18px; right:18px; width:40px; height:40px; border-radius:10px;
+    border:1px solid rgba(201,162,39,.35); background:rgba(255,255,255,.04); color:var(--pearl);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3;}
+  .sound:hover{background:rgba(201,162,39,.14);}
+
+  .stack{position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; width:100%; padding:0 24px;}
+  .emblem{width:96px; height:96px; filter:drop-shadow(0 6px 20px rgba(201,162,39,.32)); animation:bob 5s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+
+  .title{font-family:'Cinzel', Georgia, serif; font-weight:600; font-size:clamp(28px,7vw,42px);
+    letter-spacing:.04em; color:var(--pearl); margin-top:12px; text-align:center; line-height:1.05;
+    text-shadow:0 2px 18px rgba(0,0,0,.5);}
+  .title .amp{color:var(--gold-lt);}
+  .tagline{margin-top:7px; font-size:clamp(10px,2.5vw,12px); letter-spacing:.34em; text-transform:uppercase; color:var(--haze);}
+
+  .divider{display:flex; align-items:center; gap:12px; margin:22px 0 20px; color:var(--gold-d); opacity:.8;}
+  .divider .ln{width:56px; height:1px; background:linear-gradient(90deg, transparent, var(--gold-d));}
+  .divider .ln.r{background:linear-gradient(90deg, var(--gold-d), transparent);}
+
+  .buttons{display:flex; flex-direction:column; gap:12px; width:min(330px,80vw);}
+  .btn{font:inherit; text-align:left; padding:13px 18px; border-radius:12px; cursor:pointer;
+    display:flex; align-items:center; gap:14px; transition:transform .08s ease, background .2s ease, box-shadow .2s ease, border-color .2s ease;}
+  .btn:active{transform:translateY(1px);}
+  .btn .ic{flex:0 0 22px; display:flex; align-items:center; justify-content:center;}
+  .btn .ic svg{width:22px; height:22px;}
+  .btn .txt{display:flex; flex-direction:column; line-height:1.15;}
+  .btn .txt b{font-size:16px; font-weight:600; letter-spacing:.02em;}
+  .btn .txt .sub{font-size:11px; letter-spacing:.05em; opacity:.72; font-weight:400; margin-top:2px;}
+
+  .btn.primary{border:none; color:#2A1F07;
+    background:linear-gradient(90deg, var(--gold-d), var(--gold-lt), var(--gold-d)); background-size:200% 100%;
+    box-shadow:0 6px 22px rgba(201,162,39,.35);}
+  .btn.primary:hover{background-position:100% 0; box-shadow:0 8px 28px rgba(201,162,39,.5);}
+  .btn.strong{background:rgba(201,162,39,.10); border:1px solid rgba(201,162,39,.55); color:var(--pearl);}
+  .btn.strong:hover{background:rgba(201,162,39,.18); border-color:rgba(201,162,39,.8);}
+  .btn.ghost{background:rgba(255,255,255,.04); border:1px solid rgba(201,162,39,.35); color:var(--pearl); justify-content:flex-start;}
+  .btn.ghost:hover{background:rgba(201,162,39,.12); border-color:rgba(201,162,39,.6);}
+
+  .footer{position:absolute; bottom:18px; width:100%; text-align:center; font-size:11px; letter-spacing:.08em; color:rgba(157,182,196,.6); z-index:2;}
+
+  @media (prefers-reduced-motion: reduce){ .ray,.bubble,.emblem{animation:none;} }
+</style>
+</head>
+<body>
+  <div id="menu">
+    <div class="rays"><div class="ray r1"></div><div class="ray r2"></div><div class="ray r3"></div></div>
+    <div class="bubbles" id="bubbles"></div>
+
+    <button class="sound" id="sound" aria-label="Toggle sound" title="Sound">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7"/></svg>
+    </button>
+
+    <div class="stack">
+      <svg class="emblem" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="sh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E4C25A"/><stop offset="1" stop-color="#A5811C"/></linearGradient>
+          <radialGradient id="pl" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#FBF7EC"/><stop offset="1" stop-color="#CFC6AE"/></radialGradient>
+        </defs>
+        <path d="M32 50 L13 27 A24 24 0 0 1 51 27 Z" fill="url(#sh)" stroke="#A5811C" stroke-width="1"/>
+        <g stroke="#0B1D33" stroke-width="1.6" stroke-linecap="round">
+          <line x1="32" y1="50" x2="13" y2="27"/><line x1="32" y1="50" x2="20" y2="19.5"/><line x1="32" y1="50" x2="26" y2="16"/>
+          <line x1="32" y1="50" x2="32" y2="15"/><line x1="32" y1="50" x2="38" y2="16"/><line x1="32" y1="50" x2="44" y2="19.5"/><line x1="32" y1="50" x2="51" y2="27"/>
+        </g>
+        <path d="M13 27 Q17 31 21 27 Q25 31 29 27 Q32 30.5 35 27 Q39 31 43 27 Q47 31 51 27" fill="none" stroke="#A5811C" stroke-width="1.2"/>
+        <circle cx="32" cy="50" r="6.2" fill="url(#pl)" stroke="#A5811C" stroke-width="0.8"/>
+        <circle cx="29.6" cy="47.8" r="1.7" fill="#FBF7EC"/>
+      </svg>
+
+      <div class="title">Siren<span class="amp">'</span>s Bargain</div>
+      <div class="tagline">Tides &middot; Treasure &middot; Treachery</div>
+
+      <div class="divider"><span class="ln"></span>&#10022;<span class="ln r"></span></div>
+
+      <div class="buttons">
+        <button class="btn primary" data-act="hvh">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2.5 20a5.5 5.5 0 0 1 11 0M13 20a5.5 5.5 0 0 1 8.5-4.6"/></svg></span>
+          <span class="txt"><b>Human vs Human</b><span class="sub">Pass &amp; play on one device</span></span>
+        </button>
+
+        <button class="btn strong" data-act="ai">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="9" r="3"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0"/><path d="M18 3.5l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z"/></svg></span>
+          <span class="txt"><b>Play vs AI</b><span class="sub">Single player</span></span>
+        </button>
+
+        <button class="btn ghost" data-act="rules">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h10a2 2 0 0 1 2 2v12"/><path d="M4 5v13a2 2 0 0 0 2 2h10"/><path d="M8 9h5M8 13h5"/></svg></span>
+          <span class="txt"><b>How to Play</b></span>
+        </button>
+
+        <button class="btn ghost" data-act="settings">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.4-2.5H9.6l-.4 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L5.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.5h4.8l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6a7 7 0 0 0 .1-1z"/></svg></span>
+          <span class="txt"><b>Settings</b></span>
+        </button>
+      </div>
+    </div>
+
+    <div class="footer">v0.1 &middot; PASS &amp; PLAY + VS AI</div>
+  </div>
+
+<script>
+  const bc=document.getElementById('bubbles');
+  for(let i=0;i<14;i++){const b=document.createElement('div');b.className='bubble';
+    const s=4+Math.random()*11;b.style.width=b.style.height=s+'px';b.style.left=(Math.random()*100)+'%';
+    b.style.setProperty('--drift',(Math.random()*60-30)+'px');
+    b.style.animationDuration=(7+Math.random()*7)+'s';b.style.animationDelay=(-Math.random()*10)+'s';bc.appendChild(b);}
+
+  let sound=true; const sBtn=document.getElementById('sound');
+  sBtn.addEventListener('click',()=>{sound=!sound; sBtn.style.opacity=sound?1:.45;});
+
+  // button actions — wire these to your game's screen router
+  document.querySelectorAll('.btn').forEach(b=>b.addEventListener('click',()=>{
+    console.log('menu action:', b.dataset.act); // 'hvh' | 'ai' | 'rules' | 'settings'
+  }));
+</script>
+</body>
+</html>

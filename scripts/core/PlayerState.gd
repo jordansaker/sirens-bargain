@@ -62,6 +62,18 @@ func _append_to_realm(card: CardData, target_realm: String) -> void:
 	stack.append(card)
 	realms[target_realm] = stack
 
+# A realm can only be charged rent (or used as the anchor for Siren's Toll)
+# if it contains at least one "real" card — Rainbow Conch is a shared wild
+# and doesn't on its own establish ownership of a realm.
+func has_chargeable_card_in(realm: String) -> bool:
+	if not realms.has(realm):
+		return false
+	var stack: Array = realms[realm]
+	for c in stack:
+		if c is CardData and not (c as CardData).is_rainbow_conch():
+			return true
+	return false
+
 func is_realm_complete(realm: String) -> bool:
 	if not realms.has(realm):
 		return false

@@ -43,6 +43,19 @@ const HUMAN_NAME := "You"
 var HUMAN_ID: int = 0
 var OPPONENT_NAME: String = "Coral"
 
+# Palette lifted from docs/sirens-bargain-gameplay-styled.html so chrome
+# (buttons, draw pile, turn block, bottom bar) matches the mockup.
+const CH_NAVY := Color("0B1D33")
+const CH_NAVY_DEEP := Color("06111F")
+const CH_NAVY_MID := Color("102b49")
+const CH_GOLD := Color("C9A227")
+const CH_GOLD_LT := Color("E4C25A")
+const CH_GOLD_D := Color("A5811C")
+const CH_PEARL := Color("EDE6D4")
+const CH_HAZE := Color("9DB6C4")
+const CH_MIST := Color("C4D6E2")
+const CH_INK_ON_GOLD := Color("2A1F07")
+
 @onready var _turn_label: Label = %TurnLabel
 @onready var _plays_label: Label = %PlaysLabel
 @onready var _discard_label: Label = %DiscardLabel
@@ -70,12 +83,23 @@ var OPPONENT_NAME: String = "Coral"
 @onready var _accept_button: Button = %AcceptButton
 
 signal _refusal_answered(refuse: bool)
+# Emitted by the payment picker (confirm → cards, close → null → auto-fallback).
+signal _payment_answered(picks: Variant)
+# Wired by the online refusable-action protocol so `_run_online_refusable_flow`
+# can wait for the opponent's decision (a REFUSE or RESOLVE arriving over the
+# wire). Emitted with "refused" or "resolved".
+signal _remote_refusal_decision(kind: String)
+# Emitted after a SETTLE_PAYMENT event has been applied — used to gate the
+# receiver's `_settle_online` loop.
+signal _remote_payment_decided
 @onready var _opponent_board: PlayerBoardView = %OpponentBoard
 @onready var _player_board: PlayerBoardView = %PlayerBoard
-@onready var _hand_row: HBoxContainer = %HandRow
+@onready var _hand_row: Control = %HandRow
 @onready var _bank_button: Button = %BankButton
 @onready var _play_button: Button = %PlayButton
 @onready var _end_turn_button: Button = %EndTurnButton
+@onready var _fan_button: Button = %FanButton
+@onready var _zoom_button: Button = %ZoomButton
 @onready var _menu_root: Panel = %ActionMenu
 @onready var _menu_title: Label = %MenuTitle
 @onready var _menu_scroll: ScrollContainer = %MenuScroll
@@ -86,6 +110,7 @@ signal _refusal_answered(refuse: bool)
 @onready var _peek_subtitle: Label = %PeekSubtitle
 @onready var _peek_row: HBoxContainer = %PeekRow
 @onready var _peek_close: Button = %PeekClose
+@onready var _peek_confirm: Button = %PeekConfirm
 @onready var _card_peek_scrim: ColorRect = %CardPeekScrim
 @onready var _card_peek: Panel = %CardPeek
 @onready var _card_peek_banner: Panel = %CardPeekBanner
@@ -116,6 +141,16 @@ var _state: int = InteractionState.IDLE
 var _selected_card: CardData = null
 var _ctx: Dictionary = {}      # scratchpad for multi-step target picks
 var _pending_discards: Array[CardData] = []
+var _hand_fanned: bool = false
+var _fan_timer: SceneTreeTimer = null
+var _zoom_enabled: bool = false
+# 3 dots below the plays counter — filled = plays remaining, dim = spent.
+var _plays_dots: HBoxContainer = null
+# Captures whatever _tm.resolve_pending() returned on the most recent apply,
+# so `_run_online_refusable_flow` can return the outcome even when RESOLVE
+# was triggered by the opponent's broadcast (i.e. `_apply_resolve` ran the
+# resolve before the local await got the signal).
+var _last_resolve_result: Variant = null
 
 func _ready() -> void:
 	# Grab the online session first so _setup_game can branch on host/guest.
@@ -124,11 +159,12 @@ func _ready() -> void:
 		_is_online = true
 		_net_client = ns.client
 		HUMAN_ID = ns.local_player_id
-		OPPONENT_NAME = "Player 2" if HUMAN_ID == 0 else "Player 1"
+		OPPONENT_NAME = ns.opponent_name if ns.opponent_name != "" else "Opponent"
 	_setup_game()
 	_configure_boards()
 	_setup_sound()
 	_wire_signals()
+	_apply_mockup_styling()
 	_style_card_peek()
 	_hide_menu()
 	_hide_peek()
@@ -137,6 +173,10 @@ func _ready() -> void:
 	_hide_refusal_modal()
 	if _waiting_for_deck_init:
 		_prompt("Waiting for host to deal…")
+	elif _is_online and _gs.current_player_index != HUMAN_ID:
+		# Host built the deck but the guest is younger and starts first —
+		# hand the local peer directly into the waiting state.
+		_await_opponent_turn()
 	else:
 		_start_human_turn()
 
@@ -166,8 +206,12 @@ func _setup_game() -> void:
 			if c != null:
 				p.hand.append(c)
 	if _is_online:
-		# Host: broadcast the just-dealt state so the guest starts from the
-		# same position. Sent once, immediately after setup.
+		# Host: youngest-goes-first tie-break lives on NetSession and is
+		# computed identically on both peers. Set it before broadcasting so
+		# the guest picks up the right current_player.
+		var ns := get_tree().root.get_node_or_null("NetSession")
+		if ns != null and ns.has_method("starting_player_id"):
+			_gs.current_player_index = ns.starting_player_id()
 		_net_client.send(NetProtocol.build_deck_init(_gs, seed_value))
 	else:
 		# Vs-AI mode: the opponent seat is an AIOpponent.
@@ -182,18 +226,35 @@ func _shuffle_draw_pile() -> void:
 		arr[j] = tmp
 
 func _configure_boards() -> void:
-	_opponent_board.player = _gs.players[1]
-	_opponent_board.configure(OPPONENT_NAME, "AI", OPPONENT_NAME.substr(0, 1), CardColors.STEEL, false)
+	# In vs-AI mode player 0 is human, player 1 is AI. In online mode both
+	# are human — HUMAN_ID could be either 0 or 1.
+	var opp_id: int = 1 - HUMAN_ID if _is_online else 1
+	_opponent_board.player = _gs.players[opp_id]
+	var opp_tag := "" if _is_online else "AI"
+	var opp_letter := OPPONENT_NAME.substr(0, 1) if OPPONENT_NAME != "" else "?"
+	_opponent_board.configure(OPPONENT_NAME, opp_tag, opp_letter, CardColors.STEEL, false)
 	_player_board.player = _gs.players[HUMAN_ID]
-	_player_board.configure(HUMAN_NAME, "", "M", Color("6e5aa8"), true)
+	# Local player initial: from their own name in online mode, "M" in vs-AI.
+	var my_letter := "M"
+	if _is_online:
+		var ns := get_tree().root.get_node_or_null("NetSession")
+		if ns != null and String(ns.local_name).length() >= 1:
+			my_letter = String(ns.local_name).substr(0, 1)
+	_player_board.configure(HUMAN_NAME, "", my_letter, Color("6e5aa8"), true)
 
 func _wire_signals() -> void:
 	_bank_button.pressed.connect(_on_bank_pressed)
 	_play_button.pressed.connect(_on_play_pressed)
 	_end_turn_button.pressed.connect(_on_end_turn_pressed)
 	_menu_cancel.pressed.connect(_on_menu_cancel_pressed)
-	_peek_close.pressed.connect(_hide_peek)
+	_peek_close.pressed.connect(_on_peek_close_pressed)
 	_to_menu_button.pressed.connect(_on_to_menu_pressed)
+	_fan_button.toggled.connect(_on_fan_toggled)
+	_zoom_button.toggled.connect(_on_zoom_toggled)
+	# Double-tap on the background scrim = cancel any targeting flow.
+	var bg := get_node_or_null("Background")
+	if bg is Control:
+		(bg as Control).gui_input.connect(_on_background_gui_input)
 	if _net_client != null:
 		_net_client.event_received.connect(_on_net_event)
 		_net_client.opponent_left.connect(_on_opponent_left)
@@ -204,6 +265,8 @@ func _wire_signals() -> void:
 	_card_peek_scrim.gui_input.connect(_on_card_peek_scrim_input)
 	_opponent_board.realm_chip_pressed.connect(_on_opp_chip_pressed)
 	_player_board.realm_chip_pressed.connect(_on_own_chip_pressed)
+	_opponent_board.bank_pressed.connect(_on_bank_view_requested)
+	_player_board.bank_pressed.connect(_on_bank_view_requested)
 	# Play-by-play log fed by TurnManager. Fires for both human and AI plays.
 	_tm.play_logged.connect(_on_play_logged)
 	_play_again_button.pressed.connect(_on_play_again_pressed)
@@ -215,6 +278,8 @@ func _wire_signals() -> void:
 	for id in _ais.keys():
 		var ai: AIOpponent = _ais[id]
 		ai.human_refusal_hook = _prompt_human_refusal
+		ai.human_payment_hook = _prompt_human_payment
+	_peek_confirm.pressed.connect(_on_peek_confirm_pressed)
 
 # --- Turn loop -----------------------------------------------------------
 
@@ -224,7 +289,7 @@ func _start_human_turn() -> void:
 	_ctx.clear()
 	_tm.start_turn()
 	_refresh_all()
-	_flash_turn_banner("Your turn")
+	_flash_turn_banner("YOUR TURN")
 	_prompt("Tap a card in your hand.")
 
 func _end_human_turn() -> void:
@@ -277,11 +342,62 @@ func _after_turn_transition() -> void:
 func _await_opponent_turn() -> void:
 	_state = InteractionState.AI_TURN
 	_selected_card = null
+	# In HvH the local mirror still needs to advance turn state for the
+	# remote player — draw their 2 cards so this peer's copy of their hand
+	# matches theirs. Without this, subsequent KIND_PLAY_REALM / KIND_BANK
+	# events reference card ids that aren't in the local mirror and
+	# NetProtocol.find_in_hand returns null, silently dropping the play.
+	# Offline mode skips this because AIOpponent.take_turn calls start_turn
+	# itself as part of its own flow.
+	if _is_online:
+		_tm.start_turn()
 	_refresh_all()
-	_flash_turn_banner("%s's turn" % OPPONENT_NAME)
+	_flash_turn_banner(("%s's turn" % OPPONENT_NAME).to_upper())
 	_prompt("Waiting for %s…" % OPPONENT_NAME)
 
 # --- Networked play sync ------------------------------------------------
+
+# Toggle the hand's spread. Auto-collapses after a few seconds so the row
+# doesn't stay wide while you're playing.
+func _on_fan_toggled(pressed: bool) -> void:
+	_hand_fanned = pressed
+	_refresh_hand()
+	if _fan_timer != null:
+		# Best-effort cancel of the previous timer by nulling our ref — the
+		# check inside _collapse_fan_after keeps the callback a no-op once
+		# _fan_timer no longer matches.
+		_fan_timer = null
+	if pressed:
+		var t := get_tree().create_timer(5.0)
+		_fan_timer = t
+		_collapse_fan_after(t)
+
+func _collapse_fan_after(t: SceneTreeTimer) -> void:
+	await t.timeout
+	# Only collapse if this timer is still the active one and the user
+	# hasn't manually toggled off in the meantime.
+	if _fan_timer != t or not _hand_fanned:
+		return
+	_hand_fanned = false
+	_fan_button.set_pressed_no_signal(false)
+	_fan_timer = null
+	_refresh_hand()
+
+func _on_zoom_toggled(pressed: bool) -> void:
+	_zoom_enabled = pressed
+	_zoom_button.text = "Zoom: on" if pressed else "Zoom: off"
+	if not pressed and _card_peek.visible:
+		_hide_card_peek()
+
+func _on_background_gui_input(event: InputEvent) -> void:
+	# Double-tap the empty background = cancel a targeting flow. Ignored when
+	# no flow is active so it doesn't disrupt idle turns.
+	if not _is_targeting_state():
+		return
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT:
+			_on_menu_cancel_pressed()
 
 func _on_to_menu_pressed() -> void:
 	# Bail to the main menu mid-match. Online sessions get torn down so the
@@ -317,6 +433,24 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_attach_modifier(payload, false)
 		NetProtocol.KIND_REASSIGN_WILD:
 			_apply_reassign_wild(payload)
+		NetProtocol.KIND_INIT_KRAKEN:
+			_apply_initiate_kraken(payload)
+		NetProtocol.KIND_INIT_EEL:
+			_apply_initiate_eel(payload)
+		NetProtocol.KIND_INIT_TRADE:
+			_apply_initiate_trade(payload)
+		NetProtocol.KIND_INIT_TOLL:
+			_apply_initiate_toll(payload)
+		NetProtocol.KIND_INIT_FEAST:
+			_apply_initiate_feast(payload)
+		NetProtocol.KIND_INIT_TRIBUTE:
+			_apply_initiate_tribute(payload)
+		NetProtocol.KIND_REFUSE:
+			_apply_refuse(payload)
+		NetProtocol.KIND_RESOLVE:
+			_apply_resolve(payload)
+		NetProtocol.KIND_SETTLE_PAYMENT:
+			_apply_settle_payment(payload)
 		_:
 			# Unknown event — log for debugging.
 			_append_log("[color=#e88][unknown event %s][/color]" % kind)
@@ -409,7 +543,7 @@ func _run_ai_turns() -> void:
 		if ai_var == null:
 			break
 		var ai: AIOpponent = ai_var
-		_flash_turn_banner("%s's turn" % OPPONENT_NAME)
+		_flash_turn_banner(("%s's turn" % OPPONENT_NAME).to_upper())
 		_prompt("%s is thinking…" % OPPONENT_NAME)
 		# Drive the AI one play at a time so the player sees each move and
 		# each log entry lands as it happens — rather than watching the
@@ -454,7 +588,7 @@ func _show_game_over() -> void:
 		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(name_lbl)
 		var stats_lbl := Label.new()
-		stats_lbl.text = "%d sets · %d ◈" % [p.completed_realm_count(), p.total_bank_value()]
+		stats_lbl.text = "%d sets · %d P" % [p.completed_realm_count(), p.total_bank_value()]
 		stats_lbl.add_theme_font_size_override("font_size", 13)
 		stats_lbl.add_theme_color_override("font_color", CardColors.MIST)
 		row.add_child(stats_lbl)
@@ -559,18 +693,18 @@ static func _describe_pending_for_refusal(pending: PendingAction) -> String:
 			]
 		"toll_of_the_tides":
 			var per: int = int(pending.payload.get("per_target", 5))
-			return "Toll of the Tides — pay %d ◈.\nRefuse?" % per
+			return "Toll of the Tides — pay %d P.\nRefuse?" % per
 		"sirens_toll":
 			var per: int = int(pending.payload.get("per_target", 5))
 			var r: String = pending.payload.get("charger_realm", "a realm")
-			return "Siren's Toll on %s — pay %d ◈.\nRefuse?" % [r, per]
+			return "Siren's Toll on %s — pay %d P.\nRefuse?" % [r, per]
 		"mermaids_feast":
 			var per: int = int(pending.payload.get("per_target", 2))
-			return "Mermaid's Feast — pay %d ◈.\nRefuse?" % per
+			return "Mermaid's Feast — pay %d P.\nRefuse?" % per
 		"tribute":
 			var per: int = int(pending.payload.get("per_target", 0))
 			var r: String = pending.payload.get("charger_realm", "?")
-			return "Tribute on %s — pay %d ◈.\nRefuse?" % [r, per]
+			return "Tribute on %s — pay %d P.\nRefuse?" % [r, per]
 	return "Action against you.\nRefuse?"
 
 # --- Rendering -----------------------------------------------------------
@@ -581,30 +715,65 @@ func _refresh_all() -> void:
 	_player_board.refresh()
 	_refresh_hand()
 	_refresh_actions()
+	_apply_selection_pulses()
+
+# Pop the realm chip(s) on the player's own board that match the currently
+# selected realm/wild-realm card in hand. Chips are rebuilt on every board
+# refresh so this must run AFTER _player_board.refresh().
+func _apply_selection_pulses() -> void:
+	if _player_board == null:
+		return
+	var targets: Array = []
+	if _selected_card != null and _state == InteractionState.IDLE:
+		match _selected_card.type:
+			CardData.Type.REALM:
+				targets = [_selected_card.realm]
+			CardData.Type.WILD_REALM:
+				# Rainbow Conch matches all 10 realms — popping every chip
+				# reads as noise rather than guidance, so skip it.
+				if not _selected_card.is_rainbow_conch():
+					targets = _selected_card.realms
+			CardData.Type.TRIBUTE:
+				# Highlight the realms this tribute can actually charge from —
+				# Siren's Toll (empty realms list) matches any owned chargeable
+				# realm; a regular tribute matches only its listed realms.
+				var human: PlayerState = _gs.players[HUMAN_ID]
+				for r in human.realms.keys():
+					if _is_valid_charger_realm(_selected_card, r):
+						targets.append(r)
+	_player_board.pop_realms(targets)
 
 func _refresh_mid_table() -> void:
+	var remaining_plays := 0
 	if _state == InteractionState.GAME_OVER:
-		_turn_label.text = "Game over"
+		_turn_label.text = "GAME OVER"
 		_plays_label.text = ""
 	elif _gs.current_player_index == HUMAN_ID:
-		_turn_label.text = "Your turn"
-		var left: int = TurnManager.MAX_PLAYS - _tm.plays_this_turn
-		_plays_label.text = "%d plays left" % left
+		_turn_label.text = "YOUR TURN"
+		remaining_plays = TurnManager.MAX_PLAYS - _tm.plays_this_turn
+		_plays_label.text = "%d plays left" % remaining_plays
 	else:
-		_turn_label.text = "%s's turn" % OPPONENT_NAME
-		_plays_label.text = "%d plays left" % max(0, TurnManager.MAX_PLAYS - _tm.plays_this_turn)
+		_turn_label.text = ("%s's turn" % OPPONENT_NAME).to_upper()
+		remaining_plays = max(0, TurnManager.MAX_PLAYS - _tm.plays_this_turn)
+		_plays_label.text = "%d plays left" % remaining_plays
+	_refresh_plays_dots(remaining_plays)
 	_draw_label.text = "%d" % _gs.draw_pile.size()
 	_discard_label.text = "%d" % _gs.discard_pile.size()
 	# Top-of-discard: show the actual card art if the top card has one,
 	# otherwise fall back to the coloured banner + short-name placeholder.
 	# Realms lay on boards (not discard) so the top is usually an action /
 	# tribute — the packed art for those is what the player recognises.
+	var discard_outline := get_node_or_null("Root/GameCol/MidTable/DiscardPileBox/DiscardOutline")
 	if _gs.discard_pile.is_empty():
 		_discard_art.texture = null
 		_discard_art.visible = false
 		_discard_top_banner.visible = false
 		_discard_top_label.visible = false
+		if discard_outline != null:
+			discard_outline.visible = true
 	else:
+		if discard_outline != null:
+			discard_outline.visible = false
 		var top: CardData = _gs.discard_pile[_gs.discard_pile.size() - 1]
 		var tex := CardView._load_card_art(top.art_path)
 		if tex != null:
@@ -625,24 +794,141 @@ func _refresh_mid_table() -> void:
 			_discard_top_label.text = display
 			_discard_top_label.visible = true
 
+const _HAND_SELECT_LIFT_PX := 12   # small upward slide when selected
+const _HAND_SELECT_PUSH_PX := 18   # sideways slide of neighbours to open a gap
+const _HAND_ANIM_TIME := 0.16      # seconds — snappy but visible
+
 func _refresh_hand() -> void:
+	var human := _gs.players[HUMAN_ID]
+	# Fast path: hand hasn't changed (same cards in same order, same count)
+	# — just reflow positions with a tween so selection changes animate
+	# instead of hard-cutting to the new layout.
+	if _hand_matches_children(human.hand):
+		_reflow_hand()
+		return
 	for child in _hand_row.get_children():
 		child.queue_free()
-	var human := _gs.players[HUMAN_ID]
+	# Cards overlap by ~72% so the left edge of every card except the rightmost
+	# is visible; the Fan button widens that gap temporarily.
+	var step_ratio := 0.85 if _hand_fanned else 0.28
+	var overlap := int(CardView.WIDTH * step_ratio)
+	var lift := CardView.LIFT_PX
+	var count := human.hand.size()
+	# Set the container's min width so ScrollContainer knows how wide the
+	# hand is, and its height to fit the tallest (lifted) card. Extra
+	# horizontal room for the sideways push when a card is selected.
+	var total_width: int = 0
+	if count > 0:
+		total_width = (count - 1) * overlap + CardView.WIDTH + 2 * _HAND_SELECT_PUSH_PX
+	_hand_row.custom_minimum_size = Vector2(max(CardView.WIDTH, total_width), CardView.HEIGHT + lift)
+	# Position each card. Selected/lifted cards need to draw on top of their
+	# neighbours, so we defer them to a second pass and add them last.
+	var selected_view: CardView = null
+	var i := 0
 	for c in human.hand:
 		var view := CardView.new()
 		view.card = c
-		# Highlight either the currently-selected card (normal play) or
-		# cards queued for discard (end-of-turn).
-		var is_lifted := false
-		if _state == InteractionState.DISCARD:
-			is_lifted = _pending_discards.has(c)
-		else:
-			is_lifted = _selected_card != null and _selected_card == c
+		var is_lifted := _is_hand_card_lifted(c)
 		view.selected_state = is_lifted
-		view.size_flags_vertical = Control.SIZE_SHRINK_END
 		view.selected.connect(_on_hand_card_selected)
 		_hand_row.add_child(view)
+		view.position = _hand_card_target(i, is_lifted, _selected_hand_index())
+		view.size = Vector2(CardView.WIDTH, CardView.HEIGHT)
+		if is_lifted:
+			selected_view = view
+		i += 1
+	# Reorder so the selected card renders on top of everything else — later
+	# children draw above earlier ones and receive input first.
+	if selected_view != null:
+		_hand_row.move_child(selected_view, -1)
+
+func _hand_matches_children(hand: Array) -> bool:
+	if _hand_row == null:
+		return false
+	if _hand_row.get_child_count() != hand.size():
+		return false
+	for i in range(hand.size()):
+		var view := _hand_row.get_child(i) as CardView
+		if view == null or view.card != hand[i]:
+			return false
+	return true
+
+func _is_hand_card_lifted(c: CardData) -> bool:
+	if _state == InteractionState.DISCARD:
+		return _pending_discards.has(c)
+	if _selected_card != null and _selected_card == c:
+		return true
+	# Ambient highlight: while the opponent is thinking, lift any Siren's
+	# Refusal in the local hand so the player knows they can react instantly
+	# if an action lands. Purely local — the attacker's mirror doesn't render
+	# our hand, so it can't leak the fact that we're holding a Refusal.
+	if _state == InteractionState.AI_TURN and c != null and c.action_effect == "sirens_refusal":
+		return true
+	return false
+
+# Index of the currently-selected card in the human's hand, or -1.
+func _selected_hand_index() -> int:
+	var human := _gs.players[HUMAN_ID]
+	if _state == InteractionState.DISCARD:
+		# Discard mode picks multiple cards — no single "selected" to push
+		# neighbours around; each lifted card just rises in place.
+		return -1
+	if _selected_card == null:
+		return -1
+	return human.hand.find(_selected_card)
+
+# Target position for the card at `index` given whether a card is selected.
+# When any card is selected, cards to its left slide left, cards to its
+# right slide right, and the selected card itself slides up slightly. The
+# stack stays otherwise stacked (no fan spread).
+func _hand_card_target(index: int, is_lifted: bool, selected_index: int) -> Vector2:
+	var step_ratio := 0.85 if _hand_fanned else 0.28
+	var overlap := int(CardView.WIDTH * step_ratio)
+	var lift := CardView.LIFT_PX
+	var x := index * overlap
+	var y := float(lift)
+	if selected_index >= 0:
+		if index < selected_index:
+			x -= _HAND_SELECT_PUSH_PX
+		elif index > selected_index:
+			x += _HAND_SELECT_PUSH_PX
+	if is_lifted:
+		y = lift - _HAND_SELECT_LIFT_PX
+	return Vector2(x, y)
+
+# Same layout as _refresh_hand but tweens existing children instead of
+# rebuilding — used when the underlying hand list hasn't changed (typical
+# case for selection / deselection).
+func _reflow_hand() -> void:
+	var selected_index := _selected_hand_index()
+	var lifted_view: CardView = null
+	for i in range(_hand_row.get_child_count()):
+		var view := _hand_row.get_child(i) as CardView
+		if view == null:
+			continue
+		var is_lifted := _is_hand_card_lifted(view.card)
+		view.selected_state = is_lifted
+		if is_lifted:
+			lifted_view = view
+	# Reorder BEFORE tweening so the lifted card is the topmost sibling and
+	# renders over its shifted neighbours as the tween runs.
+	if lifted_view != null:
+		_hand_row.move_child(lifted_view, -1)
+	# Post-reorder: iterate again by current index because move_child shifted
+	# siblings around.
+	for i in range(_hand_row.get_child_count()):
+		var view := _hand_row.get_child(i) as CardView
+		if view == null:
+			continue
+		var hand_index := _gs.players[HUMAN_ID].hand.find(view.card)
+		if hand_index < 0:
+			continue
+		var is_lifted := _is_hand_card_lifted(view.card)
+		var target := _hand_card_target(hand_index, is_lifted, selected_index)
+		var tw := view.create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(view, "position", target, _HAND_ANIM_TIME) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _refresh_actions() -> void:
 	if _state == InteractionState.GAME_OVER:
@@ -666,6 +952,17 @@ func _refresh_actions() -> void:
 		_end_turn_button.disabled = true
 		_end_turn_button.text = "End turn"
 		return
+	# Targeting states (mid-play chip-tap or menu selection) — swap Play for
+	# a Cancel affordance so the player can back out without hunting for the
+	# menu Cancel or double-tapping the board.
+	if _is_targeting_state():
+		_bank_button.disabled = true
+		_play_button.disabled = false
+		_play_button.text = "Cancel action"
+		_end_turn_button.disabled = true
+		_end_turn_button.text = "End turn"
+		return
+	_play_button.text = "Play card"
 	# Selection-dependent enablement.
 	var have_selection := _selected_card != null
 	var can_play_turn := _tm.can_play()
@@ -673,6 +970,18 @@ func _refresh_actions() -> void:
 	_play_button.disabled = not (have_selection and _card_is_playable(_selected_card))
 	_end_turn_button.disabled = false
 	_end_turn_button.text = "End turn"
+
+func _is_targeting_state() -> bool:
+	return _state in [
+		InteractionState.SELECT_OWN_REALM,
+		InteractionState.SELECT_OWN_COMPLETED_REALM,
+		InteractionState.SELECT_OWN_REALM_FOR_CHARGE,
+		InteractionState.SELECT_OPP_PLAYER,
+		InteractionState.SELECT_OPP_REALM,
+		InteractionState.SELECT_OPP_CARD,
+		InteractionState.SELECT_OWN_CARD_FOR_TRADE,
+		InteractionState.SELECT_OWN_DEST_FOR_STOLEN,
+	]
 
 func _card_is_playable(card: CardData) -> bool:
 	if not _tm.can_play():
@@ -719,12 +1028,24 @@ func _on_play_logged(actor_id: int, text: String) -> void:
 	# names for display. Actor gets bolded before the verb.
 	var who := HUMAN_NAME if actor_id == HUMAN_ID else OPPONENT_NAME
 	var line := text
-	# Order matters: "P10" would be broken by naive "P1" replacement, but
-	# we only ever have two players so it's safe.
+	# Redact banked-card info when it's the opponent: banks are hidden
+	# information, so the pearl value + card name would leak state that the
+	# viewer isn't supposed to see. Only reveal your own bank plays.
+	if actor_id != HUMAN_ID and text.begins_with("banked "):
+		line = "banked a card"
 	line = line.replace("P%d" % HUMAN_ID, "you")
-	if _ais.has(1):
-		line = line.replace("P1", OPPONENT_NAME)
+	# Substitute the OTHER peer/AI's label. Uses NetSession's opponent name
+	# online, OPPONENT_NAME ("Coral") in vs-AI mode.
+	line = line.replace("P%d" % (1 - HUMAN_ID), OPPONENT_NAME)
 	_append_log("[b]%s[/b] %s" % [who, line])
+	# Siren's Refusal is silent by nature — the initiator sees no visible
+	# effect from their played card. Flash a centred banner so it's clear
+	# something got cancelled instead of just "nothing happened."
+	if text.find("Siren's Refusal") != -1:
+		var banner_text := "%s REFUSED!" % who.to_upper()
+		if text.begins_with("counter-refused"):
+			banner_text = "%s COUNTER-REFUSED!" % who.to_upper()
+		_flash_turn_banner(banner_text)
 	# Bucket the log line into an SFX event by looking at the leading verb.
 	if _sfx != null:
 		if text.begins_with("banked"):
@@ -787,9 +1108,11 @@ func _on_hand_card_selected(card: CardData) -> void:
 	else:
 		_selected_card = card
 		_prompt("Tap Bank it or Play card.")
-		_show_card_peek(card)
+		if _zoom_enabled:
+			_show_card_peek(card)
 	_refresh_hand()
 	_refresh_actions()
+	_apply_selection_pulses()
 
 # --- Bank/Play buttons ---------------------------------------------------
 
@@ -798,6 +1121,10 @@ func _on_bank_pressed() -> void:
 	_do_bank()
 
 func _on_play_pressed() -> void:
+	if _is_targeting_state():
+		# Play button doubles as "Cancel action" mid-flow (see _refresh_actions).
+		_on_menu_cancel_pressed()
+		return
 	if _selected_card == null:
 		return
 	var card := _selected_card
@@ -956,15 +1283,6 @@ func _place_realm(target_realm: String) -> void:
 	_reset_to_idle()
 
 func _begin_play_action(card: CardData) -> void:
-	# Online-mode gating: refusable actions require the network refusal
-	# protocol which is not yet wired. Block those with a clear prompt so
-	# the player doesn't stall on an unresponsive card.
-	if _is_online and card.action_effect in [
-			"mermaids_feast", "toll_of_the_tides", "krakens_grasp",
-			"slippery_eel", "trade_winds"]:
-		_prompt("Refusable actions aren't wired for online yet — bank or hold.")
-		_reset_to_idle()
-		return
 	match card.action_effect:
 		"ride_the_current":
 			if _tm.play_ride_the_current(card):
@@ -978,6 +1296,20 @@ func _begin_play_action(card: CardData) -> void:
 		"mermaids_feast":
 			var pending := _tm.initiate_mermaids_feast(card)
 			if pending == null:
+				_reset_to_idle()
+				return
+			if _is_online:
+				_broadcast({
+					"kind": NetProtocol.KIND_INIT_FEAST,
+					"actor": HUMAN_ID,
+					"card_id": card.id,
+				})
+				var result: Variant = await _run_online_refusable_flow()
+				if result is Dictionary:
+					await _settle_online(result)
+					_prompt("Mermaid's Feast settled.")
+				else:
+					_prompt("Feast refused.")
 				_reset_to_idle()
 			else:
 				await _open_refusal_window()
@@ -1004,8 +1336,24 @@ func _do_toll(target_id: int) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	var pending := _tm.initiate_toll_of_the_tides(_selected_card, target_id)
+	var card := _selected_card
+	var pending := _tm.initiate_toll_of_the_tides(card, target_id)
 	if pending == null:
+		_reset_to_idle()
+		return
+	if _is_online:
+		_broadcast({
+			"kind": NetProtocol.KIND_INIT_TOLL,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"target": target_id,
+		})
+		var result: Variant = await _run_online_refusable_flow()
+		if result is Dictionary:
+			await _settle_online(result)
+			_prompt("Toll settled.")
+		else:
+			_prompt("Toll refused.")
 		_reset_to_idle()
 		return
 	await _open_refusal_window()
@@ -1038,8 +1386,24 @@ func _do_kraken(target_id: int, realm_name: String) -> void:
 	_hide_menu()
 	if _selected_card == null:
 		return
-	var pending := _tm.initiate_krakens_grasp(_selected_card, target_id, realm_name)
+	var card := _selected_card
+	var pending := _tm.initiate_krakens_grasp(card, target_id, realm_name)
 	if pending == null:
+		_reset_to_idle()
+		return
+	if _is_online:
+		_broadcast({
+			"kind": NetProtocol.KIND_INIT_KRAKEN,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"target": target_id,
+			"realm": realm_name,
+		})
+		var result: Variant = await _run_online_refusable_flow()
+		if bool(result):
+			_prompt("Stole %s." % realm_name)
+		else:
+			_prompt("Kraken refused.")
 		_reset_to_idle()
 		return
 	await _open_refusal_window()
@@ -1097,6 +1461,11 @@ func _eel_pick_dest(target_id: int, stolen: CardData) -> void:
 	_hide_menu()
 	_ctx["eel_target"] = target_id
 	_ctx["eel_stolen"] = stolen
+	# Plain realm cards have exactly one legal destination (their own realm);
+	# skip the redundant "place it in…" menu and land it directly.
+	if stolen.type == CardData.Type.REALM:
+		await _do_eel(stolen.realm)
+		return
 	var options := _destination_options_for(stolen, Callable(self, "_do_eel"))
 	if options.is_empty():
 		_prompt("Nowhere on your board for that card.")
@@ -1114,8 +1483,25 @@ func _do_eel(dest_realm: String) -> void:
 	if target_id < 0 or stolen == null:
 		_reset_to_idle()
 		return
-	var pending := _tm.initiate_slippery_eel(_selected_card, target_id, stolen, dest_realm)
+	var card := _selected_card
+	var pending := _tm.initiate_slippery_eel(card, target_id, stolen, dest_realm)
 	if pending == null:
+		_reset_to_idle()
+		return
+	if _is_online:
+		_broadcast({
+			"kind": NetProtocol.KIND_INIT_EEL,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"target": target_id,
+			"stolen_id": stolen.id,
+			"dest": dest_realm,
+		})
+		var result: Variant = await _run_online_refusable_flow()
+		if bool(result):
+			_prompt("Stole %s." % stolen.name)
+		else:
+			_prompt("Eel refused.")
 		_reset_to_idle()
 		return
 	await _open_refusal_window()
@@ -1199,6 +1585,10 @@ func _trade_pick_their_dest(_own_realm: String, own_card: CardData) -> void:
 	_hide_menu()
 	_ctx["trade_own_card"] = own_card
 	var their_card: CardData = _ctx["trade_their_card"]
+	if their_card.type == CardData.Type.REALM:
+		# Plain realm — only one legal destination on our board.
+		await _trade_pick_own_board_dest(their_card.realm)
+		return
 	var options := _destination_options_for(their_card, Callable(self, "_trade_pick_own_board_dest"))
 	if options.is_empty():
 		_prompt("Nowhere on your board for that card.")
@@ -1217,15 +1607,23 @@ func _trade_pick_own_board_dest(own_board_dest: String) -> void:
 	var opp_id: int = int(_ctx["trade_target"])
 	var opp: PlayerState = _gs.players[opp_id]
 	var own_card: CardData = _ctx["trade_own_card"]
-	var options: Array = []
+	var realms: Array = []
 	for r in _valid_realms_for(own_card):
 		if opp.is_realm_complete(r):
 			continue
-		options.append({"label": r, "cb": Callable(self, "_do_trade").bind(r)})
-	if options.is_empty():
+		realms.append(r)
+	if realms.is_empty():
 		_prompt("Nowhere on their board for your card.")
 		_reset_to_idle()
 		return
+	# Plain realm — only one landing spot on their board (once we exclude any
+	# completed set of the same colour, which the loop above already did).
+	if own_card.type == CardData.Type.REALM and realms.size() == 1:
+		await _do_trade(realms[0])
+		return
+	var options: Array = []
+	for r in realms:
+		options.append({"label": r, "cb": Callable(self, "_do_trade").bind(r)})
 	_show_menu("Place your card on their…", options)
 
 # `their_board_dest` = destination on THEIR board (resolver's their_dest_realm).
@@ -1237,10 +1635,29 @@ func _do_trade(their_board_dest: String) -> void:
 	var own_card: CardData = _ctx["trade_own_card"]
 	var their_card: CardData = _ctx["trade_their_card"]
 	var own_board_dest: String = _ctx["trade_own_board_dest"]
+	var card := _selected_card
 	# Resolver order: (own_card, their_dest_realm, their_card, own_dest_realm)
-	var pending := _tm.initiate_trade_winds(_selected_card, opp_id,
+	var pending := _tm.initiate_trade_winds(card, opp_id,
 		own_card, their_board_dest, their_card, own_board_dest)
 	if pending == null:
+		_reset_to_idle()
+		return
+	if _is_online:
+		_broadcast({
+			"kind": NetProtocol.KIND_INIT_TRADE,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"target": opp_id,
+			"own_id": own_card.id,
+			"their_id": their_card.id,
+			"own_dest": own_board_dest,
+			"their_dest": their_board_dest,
+		})
+		var result: Variant = await _run_online_refusable_flow()
+		if bool(result):
+			_prompt("Traded %s for %s." % [own_card.name, their_card.name])
+		else:
+			_prompt("Trade refused.")
 		_reset_to_idle()
 		return
 	await _open_refusal_window()
@@ -1320,10 +1737,6 @@ func _apply_modifier(realm_name: String) -> void:
 func _begin_play_tribute() -> void:
 	if _selected_card == null:
 		return
-	if _is_online:
-		_prompt("Tributes aren't wired for online yet — bank or hold.")
-		_reset_to_idle()
-		return
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	var eligible: Array[String] = []
 	for r in human.realms.keys():
@@ -1332,7 +1745,7 @@ func _begin_play_tribute() -> void:
 	if eligible.is_empty():
 		# No realm to charge from — offer to bank instead of failing silently.
 		var bank_options: Array = [
-			{"label": "Bank it (%d ◈)" % _selected_card.value, "cb": Callable(self, "_do_bank")},
+			{"label": "Bank it (%d P)" % _selected_card.value, "cb": Callable(self, "_do_bank")},
 		]
 		_show_menu("No matching realm to charge from — bank it?", bank_options)
 		return
@@ -1347,7 +1760,8 @@ func _begin_play_tribute() -> void:
 	_prompt("Pick the realm to charge from (menu or tap the chip).")
 	var opts: Array = []
 	for r in eligible:
-		opts.append({"label": r, "cb": Callable(self, "_tribute_pick_target").bind(r)})
+		var rent: int = RentCalculator.rent(human, r, false)
+		opts.append({"label": "%s — %d P" % [r, rent], "cb": Callable(self, "_tribute_pick_target").bind(r)})
 	_show_menu("Charge tribute from your…", opts)
 
 # --- Bank action (button + tribute-no-realm confirmation) ----------------
@@ -1369,8 +1783,9 @@ func _do_bank() -> void:
 
 func _is_valid_charger_realm(tribute: CardData, realm_name: String) -> bool:
 	var human: PlayerState = _gs.players[HUMAN_ID]
-	var stack: Array = human.realms.get(realm_name, [])
-	if stack.is_empty():
+	# A lone Rainbow Conch doesn't count — need at least one actual realm
+	# or wild card in the set to charge rent on it.
+	if not human.has_chargeable_card_in(realm_name):
 		return false
 	if tribute.realms.is_empty():
 		return true # Siren's Toll — any realm we own
@@ -1408,11 +1823,11 @@ func _tribute_maybe_high_tide(charger_realm: String, target_id: int) -> void:
 	var high_tide_rent := RentCalculator.rent(human, charger_realm, true)
 	var options: Array = [
 		{
-			"label": "Charge %d ◈" % base_rent,
+			"label": "Charge %d P" % base_rent,
 			"cb": Callable(self, "_do_tribute").bind(charger_realm, target_id, null),
 		},
 		{
-			"label": "Charge with High Tide — %d ◈ (free)" % high_tide_rent,
+			"label": "Charge with High Tide — %d P (free)" % high_tide_rent,
 			"cb": Callable(self, "_do_tribute").bind(charger_realm, target_id, high_tide),
 		},
 	]
@@ -1426,15 +1841,33 @@ func _do_tribute(charger_realm: String, target_id: int = -1, high_tide: CardData
 		# SELECT_OWN_REALM_FOR_CHARGE / SELECT_OPP_PLAYER.
 		_reset_to_idle()
 		return
-	var pending := _tm.initiate_tribute(_selected_card, charger_realm, target_id, high_tide)
+	var card := _selected_card
+	var pending := _tm.initiate_tribute(card, charger_realm, target_id, high_tide)
 	if pending == null:
+		_reset_to_idle()
+		return
+	var label := "Tribute (%s)" % charger_realm
+	if high_tide != null:
+		label += " + High Tide"
+	if _is_online:
+		_broadcast({
+			"kind": NetProtocol.KIND_INIT_TRIBUTE,
+			"actor": HUMAN_ID,
+			"card_id": card.id,
+			"charger_realm": charger_realm,
+			"target": target_id,
+			"ht_id": high_tide.id if high_tide != null else "",
+		})
+		var result: Variant = await _run_online_refusable_flow()
+		if result is Dictionary:
+			await _settle_online(result)
+			_prompt("%s settled." % label)
+		else:
+			_prompt("%s refused." % label)
 		_reset_to_idle()
 		return
 	await _open_refusal_window()
 	var result: Variant = _tm.resolve_pending()
-	var label := "Tribute (%s)" % charger_realm
-	if high_tide != null:
-		label += " + High Tide"
 	if result is Dictionary:
 		_settle_owed_to_human(result, label)
 	_reset_to_idle()
@@ -1485,7 +1918,10 @@ func _settle_owed_to_human(owed: Dictionary, label: String) -> void:
 		if amount <= 0:
 			continue
 		var payer: PlayerState = _gs.players[payer_id]
-		var paid := PaymentResolver.settle_greedy(payer, receiver, amount)
+		# Realm-layout-aware payment: protects the AI's set progress the same
+		# way it does when it's the receiver, so debts extracted by the human
+		# don't disproportionately dismantle its near-complete realms.
+		var paid := PaymentResolver.settle_smart(payer, receiver, amount)
 		total += paid
 	if total > 0:
 		_prompt("%s → %d pearls." % [label, total])
@@ -1519,7 +1955,7 @@ func _show_menu(title: String, options: Array) -> void:
 		b.custom_minimum_size = Vector2(0, 48)
 		# Colour-code buttons whose label is a realm name so the player can
 		# associate names with the coloured chips on the strips. Non-realm
-		# labels (e.g. "Charge N ◈", "Bank it") get the default styling.
+		# labels (e.g. "Charge N P", "Bank it") get the default styling.
 		if CardColors.REALM.has(opt["label"]):
 			_style_button_as_realm(b, opt["label"])
 		var cb: Callable = opt["cb"]
@@ -1579,6 +2015,45 @@ func _style_button_as_realm(b: Button, realm_name: String) -> void:
 #   * picker (pick_cb set) — every card tap fires the callback with the card;
 #     used by Slippery Eel and Trade Winds to let the player pick a specific
 #     card visually rather than from a text menu.
+func _on_bank_view_requested(player_id: int) -> void:
+	# Opponent banks are hidden info — tap on their pearl total shouldn't
+	# reveal their cards.
+	if player_id != HUMAN_ID:
+		_prompt("Opponent bank is hidden.")
+		return
+	_show_bank_peek(player_id)
+
+func _show_bank_peek(player_id: int) -> void:
+	var player: PlayerState = _gs.players[player_id]
+	_peek_title.text = "Your bank"
+	var total := player.total_bank_value()
+	var count := player.bank.size()
+	_peek_subtitle.text = "%d pearls · %d card%s" % [
+		total, count, "" if count == 1 else "s"
+	]
+	# Not a picker — pure inspection. Clear any lingering picker context.
+	_ctx.erase("peek_pick_cb")
+	_ctx["peek_player"] = player_id
+	_ctx["peek_realm"] = ""
+	for child in _peek_row.get_children():
+		child.queue_free()
+	if count == 0:
+		var empty := Label.new()
+		empty.text = "(empty)"
+		empty.add_theme_color_override("font_color", CardColors.HAZE)
+		_peek_row.add_child(empty)
+	else:
+		var sorted := player.bank.duplicate()
+		sorted.sort_custom(func(a, b): return a.value < b.value)
+		for c in sorted:
+			var view := CardView.new()
+			view.card = c
+			_peek_row.add_child(view)
+	_peek_close.text = "Close"
+	_peek_confirm.visible = false
+	_ctx.erase("pay_pending")
+	_peek_root.visible = true
+
 func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Callable()) -> void:
 	var player: PlayerState = _gs.players[player_id]
 	var stack: Array = player.realms.get(realm_name, [])
@@ -1621,13 +2096,39 @@ func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Ca
 		view.card = c
 		view.selected.connect(_on_peek_card_selected)
 		_peek_row.add_child(view)
+	# Picker mode = cancelling the swap; informational = just closing the peek.
+	_peek_close.text = "Cancel" if pick_cb.is_valid() else "Close"
+	_peek_confirm.visible = false
+	_ctx.erase("pay_pending")
 	_peek_root.visible = true
 
 func _hide_peek() -> void:
 	if _peek_root != null:
 		_peek_root.visible = false
+	if _peek_confirm != null:
+		_peek_confirm.visible = false
 	_ctx.erase("peek_player")
 	_ctx.erase("peek_realm")
+
+# Peek-modal close button. In picker mode (Eel / Trade Winds mid-flow) closing
+# the peek used to strand the player in a non-IDLE state — now it cancels the
+# whole action so they can pick a different card or bank instead. Payment mode
+# treats Close as "auto-pay" (fall back to smart selection).
+func _on_peek_close_pressed() -> void:
+	var was_action_picker: bool = _ctx.has("peek_pick_cb")
+	var was_pay_picker: bool = _ctx.has("pay_pending")
+	_ctx.erase("peek_pick_cb")
+	if was_pay_picker:
+		_ctx.erase("pay_pending")
+		_hide_peek()
+		_payment_answered.emit(null)
+		return
+	_hide_peek()
+	if was_action_picker:
+		_state = InteractionState.IDLE
+		_ctx.clear()
+		_refresh_actions()
+		_prompt("Cancelled — pick a card or bank it.")
 
 func _stack_has_shiftable_wild(stack: Array, current_realm: String) -> bool:
 	for c in stack:
@@ -1642,11 +2143,21 @@ func _stack_has_shiftable_wild(stack: Array, current_realm: String) -> bool:
 	return false
 
 func _on_peek_card_selected(card: CardData) -> void:
+	# Payment picker mode: taps toggle each card's selection; the running total
+	# is shown in the subtitle and the Confirm button enables once we've
+	# selected enough to cover the remaining debt.
+	if _ctx.has("pay_pending"):
+		_toggle_pay_pick(card)
+		return
 	# Picker mode: a targeting flow (Eel / Trade) opened the peek to let the
 	# player pick a specific card. Fire its callback and dismiss.
 	var pick_cb_var: Variant = _ctx.get("peek_pick_cb")
 	if pick_cb_var is Callable and (pick_cb_var as Callable).is_valid():
 		var cb: Callable = pick_cb_var
+		# Clear the picker context BEFORE hiding — otherwise _on_peek_close_pressed
+		# could later see a stale peek_pick_cb and mistakenly cancel a follow-up
+		# informational peek.
+		_ctx.erase("peek_pick_cb")
 		_hide_peek()
 		cb.call(card)
 		return
@@ -1695,6 +2206,111 @@ static func _modifier_display_name(m: CardData) -> String:
 		"coral_cottage": return "Coral Cottage"
 		"pearl_palace": return "Pearl Palace"
 	return m.name
+
+# --- Human-payment picker -------------------------------------------------
+#
+# When an AI-driven tribute/toll/feast charges the human, this hook lets the
+# player choose which realm cards to spend once their bank can't cover the
+# debt. Falls back to the AI's smart auto-pay when the bank alone suffices
+# or when the picker is dismissed via Close.
+
+func _prompt_human_payment(payer: PlayerState, receiver: PlayerState, amount: int) -> Variant:
+	if payer == null or payer.id != HUMAN_ID:
+		return null
+	var bank_total := payer.total_bank_value()
+	if bank_total >= amount:
+		# Bank can cover — smart auto-pay handles it (min-overpay subset).
+		return null
+	var remaining := amount - bank_total
+	var picks: Variant = await _open_pay_picker(payer, receiver, amount, remaining)
+	if picks == null:
+		return null
+	var from_bank: Array[CardData] = []
+	from_bank.append_array(payer.bank)
+	var from_realms: Array[CardData] = []
+	from_realms.append_array(picks as Array[CardData])
+	return {"bank": from_bank, "realms": from_realms}
+
+# Repurpose the RealmPeek modal as a card-selection UI. Returns Array[CardData]
+# of picks (chosen realm cards) or null if the user closed the picker.
+func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int, remaining: int) -> Variant:
+	var who := OPPONENT_NAME if receiver.id != HUMAN_ID else "yourself"
+	_peek_title.text = "Pay %d P to %s" % [amount, who]
+	_peek_subtitle.text = "Bank covers %d — pick cards worth %d more." % [
+		payer.total_bank_value(), remaining
+	]
+	_ctx["pay_pending"] = {
+		"remaining": remaining,
+		"picks": [] as Array[CardData],
+	}
+	_ctx.erase("peek_pick_cb")
+	_ctx.erase("peek_player")
+	_ctx.erase("peek_realm")
+	for child in _peek_row.get_children():
+		child.queue_free()
+	# All realm cards from the payer, incomplete sets first (spending from an
+	# incomplete set is cheaper than breaking a complete one).
+	var incomplete: Array[CardData] = []
+	var complete: Array[CardData] = []
+	for r in payer.realms.keys():
+		var stack: Array = payer.realms[r]
+		if payer.is_realm_complete(r):
+			for c in stack:
+				# Zero-value cards (Rainbow Conch) can't pay a debt, so leave
+				# them out of the picker so the player can't accidentally
+				# waste one on a payment they don't cover.
+				if c.value > 0:
+					complete.append(c)
+		else:
+			for c in stack:
+				if c.value > 0:
+					incomplete.append(c)
+	incomplete.sort_custom(func(a, b): return a.value < b.value)
+	complete.sort_custom(func(a, b): return a.value < b.value)
+	for c in incomplete + complete:
+		var view := CardView.new()
+		view.card = c
+		view.selected.connect(_on_peek_card_selected)
+		_peek_row.add_child(view)
+	_peek_confirm.text = "Confirm (0 P)"
+	_peek_confirm.disabled = true
+	_peek_confirm.visible = true
+	_peek_close.text = "Auto"
+	_peek_root.visible = true
+	var answer: Variant = await _payment_answered
+	return answer
+
+func _toggle_pay_pick(card: CardData) -> void:
+	var pending: Dictionary = _ctx.get("pay_pending", {})
+	if pending.is_empty():
+		return
+	var picks: Array[CardData] = pending.get("picks", [] as Array[CardData])
+	if picks.has(card):
+		picks.erase(card)
+	else:
+		picks.append(card)
+	pending["picks"] = picks
+	_ctx["pay_pending"] = pending
+	# Reflect selection state on the matching CardView so the border switches
+	# to the "selected" style.
+	for child in _peek_row.get_children():
+		if child is CardView and (child as CardView).card == card:
+			(child as CardView).selected_state = picks.has(card)
+	var selected_sum := 0
+	for c in picks:
+		selected_sum += c.value
+	var remaining: int = int(pending.get("remaining", 0))
+	_peek_confirm.text = "Confirm (%d P)" % selected_sum
+	_peek_confirm.disabled = selected_sum < remaining
+
+func _on_peek_confirm_pressed() -> void:
+	var pending: Dictionary = _ctx.get("pay_pending", {})
+	if pending.is_empty():
+		return
+	var picks: Array[CardData] = pending.get("picks", [] as Array[CardData])
+	_ctx.erase("pay_pending")
+	_hide_peek()
+	_payment_answered.emit(picks)
 
 # --- Card peek (tap-a-card in hand for details) --------------------------
 #
@@ -1883,19 +2499,19 @@ static func _card_info_text(c: CardData) -> String:
 		CardData.Type.REALM:
 			var tiers: Array = Realms.RENT_TIERS.get(c.realm, [])
 			lines.append("Rent by set size: " + _format_tiers(tiers))
-			lines.append("Set size: %d · Worth %d ◈ toward a debt (can't be banked)" % [Realms.size_of(c.realm), c.value])
+			lines.append("Set size: %d · Worth %d P toward a debt (can't be banked)" % [Realms.size_of(c.realm), c.value])
 		CardData.Type.WILD_REALM:
 			if c.is_rainbow_conch():
 				lines.append("Can't be banked or paid — a wild placeholder only.")
 			else:
-				lines.append("Worth %d ◈ toward a debt (can't be banked)" % c.value)
+				lines.append("Worth %d P toward a debt (can't be banked)" % c.value)
 		CardData.Type.PEARL:
 			lines.append("%d pearls to bank" % c.value)
 		CardData.Type.TRIBUTE:
-			lines.append("Bank value: %d ◈" % c.value)
+			lines.append("Bank value: %d P" % c.value)
 		CardData.Type.ACTION:
 			if c.value > 0:
-				lines.append("Bank value: %d ◈" % c.value)
+				lines.append("Bank value: %d P" % c.value)
 			else:
 				lines.append("Cannot be banked.")
 	return "\n".join(lines)
@@ -1905,3 +2521,585 @@ static func _format_tiers(tiers: Array) -> String:
 	for t in tiers:
 		parts.append(str(t))
 	return " / ".join(parts)
+
+# --- Mockup-styled chrome ------------------------------------------------
+#
+# Lifts the chrome styling from docs/sirens-bargain-gameplay-styled.html:
+# radial navy background, gold-outlined draw pile, Cinzel turn labels, three
+# button variants (prim / ghost / util / gold-text), and a bottom-bar gradient
+# behind the Actions row. Called at the end of _ready so it overrides the
+# defaults baked into the .tscn without touching the scene layout.
+
+func _apply_mockup_styling() -> void:
+	_style_background()
+	_style_action_bar_backdrop()
+	_style_button_as(_bank_button, "ghost")
+	_style_button_as(_play_button, "prim")
+	_style_button_as(_end_turn_button, "ghost")
+	_style_button_as(_fan_button, "util")
+	_style_button_as(_zoom_button, "util")
+	_style_button_as(_to_menu_button, "ghost")
+	_style_turn_block()
+	_style_draw_pile()
+	_style_prompt_label()
+
+func _style_background() -> void:
+	# Overlay a radial-gradient TextureRect on top of the existing solid
+	# Background ColorRect so the ColorRect can act as a fallback fill under
+	# any transparent edges of the gradient.
+	var bg := get_node_or_null("Background")
+	if bg is ColorRect:
+		(bg as ColorRect).color = CH_NAVY_DEEP
+	if has_node("BackgroundGlow"):
+		return
+	var glow := TextureRect.new()
+	glow.name = "BackgroundGlow"
+	glow.set_anchors_preset(Control.PRESET_FULL_RECT)
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	glow.stretch_mode = TextureRect.STRETCH_SCALE
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
+	g.colors = PackedColorArray([CH_NAVY_MID, CH_NAVY, CH_NAVY_DEEP])
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.4)
+	gt.fill_to = Vector2(1.2, 1.2)
+	gt.width = 1024
+	gt.height = 1024
+	glow.texture = gt
+	# Insert immediately after Background so it renders behind everything else
+	# but above the flat colour fill.
+	add_child(glow)
+	move_child(glow, 1)
+
+func _style_action_bar_backdrop() -> void:
+	# Bottom-bar treatment from the mockup — a vertical gradient that fades
+	# from opaque navy at the bottom to transparent higher up, giving the
+	# controls a "docked" chin without a hard divider line.
+	if has_node("ActionBarBackdrop"):
+		return
+	var bar := TextureRect.new()
+	bar.name = "ActionBarBackdrop"
+	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bar.stretch_mode = TextureRect.STRETCH_SCALE
+	bar.offset_top = -110
+	bar.offset_bottom = 0
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.7, 1.0])
+	g.colors = PackedColorArray([
+		Color(0.024, 0.067, 0.122, 0.0),
+		Color(0.024, 0.067, 0.122, 0.55),
+		Color(0.024, 0.067, 0.122, 0.96),
+	])
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill = GradientTexture2D.FILL_LINEAR
+	gt.fill_from = Vector2(0.5, 0.0)
+	gt.fill_to = Vector2(0.5, 1.0)
+	gt.width = 32
+	gt.height = 128
+	bar.texture = gt
+	add_child(bar)
+	# Layer it BEHIND the Root HBox — otherwise the gradient draws over the
+	# Actions buttons and swallows their outlines. `Root` is a direct child of
+	# GameScreen, so placing the bar at Root's index shifts Root up and the
+	# bar renders under it.
+	var root_node := get_node_or_null("Root")
+	if root_node != null:
+		move_child(bar, root_node.get_index())
+
+# --- Button variants ------------------------------------------------------
+
+func _style_button_as(btn: Button, kind: String) -> void:
+	if btn == null:
+		return
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var sb := StyleBoxFlat.new()
+	sb.corner_radius_top_left = 11
+	sb.corner_radius_top_right = 11
+	sb.corner_radius_bottom_left = 11
+	sb.corner_radius_bottom_right = 11
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	match kind:
+		"prim":
+			# Primary gold — solid GOLD fill (StyleBoxFlat can't gradient),
+			# GOLD_LT on hover to hint at the mockup's sheen.
+			sb.bg_color = CH_GOLD
+			sb.border_width_left = 0
+			sb.border_width_right = 0
+			sb.border_width_top = 0
+			sb.border_width_bottom = 0
+			sb.shadow_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.35)
+			sb.shadow_size = 5
+			sb.shadow_offset = Vector2(0, 4)
+			btn.add_theme_color_override("font_color", CH_INK_ON_GOLD)
+			btn.add_theme_color_override("font_hover_color", CH_INK_ON_GOLD)
+			btn.add_theme_color_override("font_pressed_color", CH_INK_ON_GOLD)
+			btn.add_theme_color_override("font_disabled_color", Color(CH_INK_ON_GOLD.r, CH_INK_ON_GOLD.g, CH_INK_ON_GOLD.b, 0.5))
+			var hover := sb.duplicate()
+			hover.bg_color = CH_GOLD_LT
+			hover.shadow_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.5)
+			hover.shadow_size = 7
+			btn.add_theme_stylebox_override("hover", hover)
+			btn.add_theme_stylebox_override("pressed", hover)
+			# Disabled ("dim") — 35 % opacity via a duplicated stylebox with
+			# alpha-lowered bg; matches the mockup's `.dim` treatment.
+			var disabled := sb.duplicate()
+			disabled.bg_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.35)
+			disabled.shadow_size = 0
+			btn.add_theme_stylebox_override("disabled", disabled)
+		"ghost":
+			# Bumped from 4%/35% to 12%/70% — over the gradient chin the low
+			# opacity was reading as invisible; this gives the outline enough
+			# contrast to define the button.
+			sb.bg_color = Color(0.055, 0.114, 0.184, 0.75)
+			sb.border_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.7)
+			sb.border_width_left = 1
+			sb.border_width_right = 1
+			sb.border_width_top = 1
+			sb.border_width_bottom = 1
+			btn.add_theme_color_override("font_color", CH_PEARL)
+			btn.add_theme_color_override("font_hover_color", CH_PEARL)
+			btn.add_theme_color_override("font_pressed_color", CH_PEARL)
+			btn.add_theme_color_override("font_disabled_color", Color(CH_PEARL.r, CH_PEARL.g, CH_PEARL.b, 0.4))
+			var hover := sb.duplicate()
+			hover.bg_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.2)
+			hover.border_color = CH_GOLD_LT
+			btn.add_theme_stylebox_override("hover", hover)
+			btn.add_theme_stylebox_override("pressed", hover)
+			var disabled := sb.duplicate()
+			disabled.bg_color = Color(0.055, 0.114, 0.184, 0.45)
+			disabled.border_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.3)
+			btn.add_theme_stylebox_override("disabled", disabled)
+		"util":
+			# Quieter cousin of ghost — solid navy tint with a subtle gold
+			# outline, so Fan/Zoom stay legible against the gradient chin.
+			sb.bg_color = Color(0.055, 0.114, 0.184, 0.65)
+			sb.border_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.5)
+			sb.border_width_left = 1
+			sb.border_width_right = 1
+			sb.border_width_top = 1
+			sb.border_width_bottom = 1
+			sb.content_margin_left = 16
+			sb.content_margin_right = 16
+			sb.content_margin_top = 11
+			sb.content_margin_bottom = 11
+			btn.add_theme_color_override("font_color", CH_MIST)
+			btn.add_theme_color_override("font_hover_color", CH_PEARL)
+			btn.add_theme_color_override("font_pressed_color", CH_PEARL)
+			btn.add_theme_color_override("font_disabled_color", Color(CH_MIST.r, CH_MIST.g, CH_MIST.b, 0.4))
+			var hover := sb.duplicate()
+			hover.bg_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.18)
+			hover.border_color = CH_GOLD_LT
+			btn.add_theme_stylebox_override("hover", hover)
+			btn.add_theme_stylebox_override("pressed", hover)
+			btn.add_theme_stylebox_override("disabled", sb.duplicate())
+		"gold-text":
+			# Transparent button, gold-lt text — used for text-only affordances.
+			sb.bg_color = Color(0, 0, 0, 0)
+			sb.border_width_left = 0
+			sb.border_width_right = 0
+			sb.border_width_top = 0
+			sb.border_width_bottom = 0
+			btn.add_theme_color_override("font_color", CH_GOLD_LT)
+			btn.add_theme_color_override("font_hover_color", Color("F2D98A"))
+			btn.add_theme_color_override("font_pressed_color", Color("F2D98A"))
+			btn.add_theme_stylebox_override("hover", sb.duplicate())
+			btn.add_theme_stylebox_override("pressed", sb.duplicate())
+			btn.add_theme_stylebox_override("disabled", sb.duplicate())
+	btn.add_theme_stylebox_override("normal", sb)
+	btn.add_theme_stylebox_override("focus", sb)
+
+# --- Turn block + draw pile ---------------------------------------------
+
+func _style_turn_block() -> void:
+	if _turn_label != null:
+		_turn_label.add_theme_font_override("font", _chrome_serif_font())
+		_turn_label.add_theme_font_size_override("font_size", 26)
+		_turn_label.add_theme_color_override("font_color", CH_PEARL)
+		_turn_label.add_theme_constant_override("shadow_offset_y", 1)
+		_turn_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+		_turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if _plays_label != null:
+		_plays_label.add_theme_font_size_override("font_size", 15)
+		_plays_label.add_theme_color_override("font_color", CH_HAZE)
+		_plays_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Plays-remaining dots — 3 pips under the plays label. Gold when the
+	# player still has that play, muted white when spent.
+	if _plays_label != null and _plays_dots == null:
+		var parent := _plays_label.get_parent()
+		_plays_dots = HBoxContainer.new()
+		_plays_dots.add_theme_constant_override("separation", 6)
+		_plays_dots.alignment = BoxContainer.ALIGNMENT_CENTER
+		_plays_dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		for i in range(TurnManager.MAX_PLAYS):
+			var dot := Panel.new()
+			dot.custom_minimum_size = Vector2(9, 9)
+			dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_plays_dots.add_child(dot)
+		parent.add_child(_plays_dots)
+
+func _refresh_plays_dots(remaining: int) -> void:
+	if _plays_dots == null:
+		return
+	for i in range(_plays_dots.get_child_count()):
+		var dot := _plays_dots.get_child(i) as Panel
+		if dot == null:
+			continue
+		var lit := i < remaining
+		var sb := StyleBoxFlat.new()
+		sb.corner_radius_top_left = 5
+		sb.corner_radius_top_right = 5
+		sb.corner_radius_bottom_left = 5
+		sb.corner_radius_bottom_right = 5
+		sb.bg_color = CH_GOLD_LT if lit else Color(1, 1, 1, 0.18)
+		dot.add_theme_stylebox_override("panel", sb)
+
+func _style_draw_pile() -> void:
+	# Draw pile — navy fill + subtle drop shadow. No gold border (the card
+	# art on top already provides its own edge, and the outline was reading
+	# as a redundant halo).
+	var box := get_node_or_null("Root/GameCol/MidTable/DrawPileBox")
+	if box != null and not box.has_node("DrawFrame"):
+		var frame := Panel.new()
+		frame.name = "DrawFrame"
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = CH_NAVY
+		sb.corner_radius_top_left = 10
+		sb.corner_radius_top_right = 10
+		sb.corner_radius_bottom_left = 10
+		sb.corner_radius_bottom_right = 10
+		sb.shadow_color = Color(0, 0, 0, 0.4)
+		sb.shadow_size = 6
+		sb.shadow_offset = Vector2(0, 4)
+		frame.add_theme_stylebox_override("panel", sb)
+		box.add_child(frame)
+		box.move_child(frame, 0)
+	if _draw_label != null:
+		_draw_label.add_theme_font_override("font", _chrome_serif_font())
+		_draw_label.add_theme_font_size_override("font_size", 20)
+		_draw_label.add_theme_color_override("font_color", CH_GOLD_LT)
+	# Discard pile placeholder — dashed gold outline shown only when the
+	# discard is empty. Attached to the DiscardPileBox behind its texture
+	# children so any drawn top-card art fully covers it.
+	var disc := get_node_or_null("Root/GameCol/MidTable/DiscardPileBox")
+	if disc != null and not disc.has_node("DiscardOutline"):
+		var outline := Control.new()
+		outline.name = "DiscardOutline"
+		outline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		outline.set_anchors_preset(Control.PRESET_FULL_RECT)
+		outline.draw.connect(_draw_dashed_border.bind(outline))
+		disc.add_child(outline)
+		disc.move_child(outline, 0)
+
+# Called from a DiscardOutline's `draw` signal. Draws a 1 px dashed rectangle
+# around the control's rect in a low-opacity gold — matches the mockup's
+# `.discard .d { border:1px dashed rgba(201,162,39,.3); }`.
+func _draw_dashed_border(ctrl: Control) -> void:
+	if ctrl == null:
+		return
+	var color := Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.3)
+	var w := ctrl.size.x
+	var h := ctrl.size.y
+	var dash := 4.0
+	var gap := 3.0
+	var step := dash + gap
+	var x := 0.0
+	while x < w:
+		var seg_end: float = min(x + dash, w)
+		ctrl.draw_line(Vector2(x, 0), Vector2(seg_end, 0), color, 1.0)
+		ctrl.draw_line(Vector2(x, h - 1), Vector2(seg_end, h - 1), color, 1.0)
+		x += step
+	var y := 0.0
+	while y < h:
+		var seg_end: float = min(y + dash, h)
+		ctrl.draw_line(Vector2(0, y), Vector2(0, seg_end), color, 1.0)
+		ctrl.draw_line(Vector2(w - 1, y), Vector2(w - 1, seg_end), color, 1.0)
+		y += step
+
+func _style_prompt_label() -> void:
+	if _prompt_label == null:
+		return
+	_prompt_label.add_theme_font_size_override("font_size", 15)
+	_prompt_label.add_theme_color_override("font_color", CH_HAZE)
+
+func _chrome_serif_font() -> Font:
+	var f := SystemFont.new()
+	f.font_names = PackedStringArray(["Cinzel", "Georgia", "Times New Roman", "serif"])
+	f.subpixel_positioning = TextServer.SUBPIXEL_POSITIONING_AUTO
+	return f
+
+# --- Online refusable-action protocol -----------------------------------
+#
+# Refusable actions (Kraken / Eel / Trade / Toll / Feast / Tribute) require
+# three networked steps to stay in lockstep:
+#   1. INITIATE_* — both mirrors create the same PendingAction.
+#   2. REFUSE / RESOLVE — both apply the same refusal stack, then the same
+#      resolve. Whichever peer's HUMAN_ID is the "next refuser" acts; the
+#      other peer awaits their broadcast.
+#   3. SETTLE_PAYMENT (owed-map actions only) — the payer's peer picks the
+#      cards (auto via smart_picks or via the user picker) and broadcasts
+#      the exact ids; both peers apply PaymentResolver.pay with the same
+#      lists so their mirrors transfer the same cards.
+
+static func _find_refusal_in_hand(player: PlayerState) -> CardData:
+	for c in player.hand:
+		if c.action_effect == "sirens_refusal":
+			return c
+	return null
+
+# Prompt the local human whether to refuse the pending action. Unlike
+# _prompt_human_refusal, this doesn't gate on target_id — used for both the
+# defender's initial refusal AND the attacker's counter-refusal. Caller has
+# already confirmed HUMAN_ID is `next_refuser_for(target)`.
+func _prompt_local_refusal(pending: PendingAction) -> bool:
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	if _find_refusal_in_hand(human) == null:
+		return false
+	_show_refusal_modal(pending)
+	var choice: bool = await _refusal_answered
+	_hide_refusal_modal()
+	return choice
+
+func _run_online_refusable_flow() -> Variant:
+	var pending: PendingAction = _gs.pending_action
+	if pending == null:
+		return null
+	# Reset the resolve-result cache so we can't return stale data from a
+	# previous action.
+	_last_resolve_result = null
+	for target_id in pending.targets.duplicate():
+		var outcome: String = await _refusal_cycle_for_target(target_id)
+		if outcome == "cancelled":
+			return null
+	return _last_resolve_result
+
+func _refusal_cycle_for_target(target_id: int) -> String:
+	while true:
+		var pa: PendingAction = _gs.pending_action
+		if pa == null:
+			return "cancelled"
+		var next_refuser: int = pa.next_refuser_for(target_id)
+		var refuser: PlayerState = _gs.players[next_refuser]
+		var refusal_card := _find_refusal_in_hand(refuser)
+		if next_refuser == HUMAN_ID:
+			if refusal_card == null:
+				# Can't refuse — resolve.
+				_apply_resolve_locally_and_broadcast()
+				return "resolved"
+			var wants: bool = await _prompt_local_refusal(pa)
+			if wants:
+				_tm.refuse(target_id, HUMAN_ID, refusal_card)
+				_broadcast({
+					"kind": NetProtocol.KIND_REFUSE,
+					"target": target_id,
+					"refuser": HUMAN_ID,
+					"card_id": refusal_card.id,
+				})
+				_refresh_all()
+				# Loop — opponent gets to counter-refuse or resolve.
+			else:
+				_apply_resolve_locally_and_broadcast()
+				return "resolved"
+		else:
+			# Opponent's turn to decide — wait for their event.
+			var decision: String = await _remote_refusal_decision
+			if decision == "resolved":
+				return "resolved"
+			# else "refused" — loop and check whether we can counter-refuse.
+	# Unreachable — the `while true` above always returns from one of its
+	# branches. Only here to satisfy Godot's "all paths return a value" check.
+	return "cancelled"
+
+func _apply_resolve_locally_and_broadcast() -> void:
+	_last_resolve_result = _tm.resolve_pending()
+	_broadcast({"kind": NetProtocol.KIND_RESOLVE})
+	_refresh_all()
+
+# Receiver-side entry point — called after applying an INITIATE_* event. We
+# run our own refusal cycle in parallel with the attacker's; both cycles
+# converge on the same resolve. If the resolve produced an owed map, run
+# settlement (which either broadcasts our payment or awaits theirs).
+func _handle_remote_initiated_action() -> void:
+	_state = InteractionState.AI_TURN
+	_refresh_all()
+	var result: Variant = await _run_online_refusable_flow()
+	if result is Dictionary:
+		await _settle_online(result)
+	_refresh_all()
+
+func _settle_online(owed: Dictionary) -> void:
+	# In 2P HvH the receiver of the payment is always the attacker of the
+	# pending action, i.e. the opponent of any local payer.
+	var opp_id: int = 1 - HUMAN_ID
+	for k in owed.keys():
+		var payer_id: int = int(k)
+		var amount: int = int(owed[k])
+		if amount <= 0:
+			continue
+		if payer_id == HUMAN_ID:
+			var payer: PlayerState = _gs.players[HUMAN_ID]
+			var receiver: PlayerState = _gs.players[opp_id]
+			# _prompt_human_payment returns a Dict when the bank alone can't
+			# cover the debt (user picked their realm cards); returns null
+			# when the bank covers, in which case we fall back to smart auto.
+			var picks_var: Variant = await _prompt_human_payment(payer, receiver, amount)
+			var from_bank: Array[CardData]
+			var from_realms: Array[CardData]
+			if picks_var is Dictionary:
+				from_bank = picks_var.get("bank", [] as Array[CardData])
+				from_realms = picks_var.get("realms", [] as Array[CardData])
+			else:
+				var auto := PaymentResolver.smart_picks(payer, amount)
+				from_bank = auto["bank"]
+				from_realms = auto["realms"]
+			_broadcast({
+				"kind": NetProtocol.KIND_SETTLE_PAYMENT,
+				"payer": HUMAN_ID,
+				"receiver": receiver.id,
+				"amount": amount,
+				"bank_ids": _card_ids_from(from_bank),
+				"realm_ids": _card_ids_from(from_realms),
+			})
+			PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+			_refresh_all()
+		else:
+			# Opponent is paying — wait for their SETTLE_PAYMENT broadcast.
+			await _remote_payment_decided
+
+static func _card_ids_from(cards: Array[CardData]) -> Array:
+	var out: Array = []
+	for c in cards:
+		out.append(c.id)
+	return out
+
+# --- Incoming event handlers --------------------------------------------
+
+func _apply_initiate_kraken(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var target_id := int(payload.get("target", -1))
+	var realm_name := String(payload.get("realm", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	if card == null:
+		return
+	_tm.initiate_krakens_grasp(card, target_id, realm_name)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_initiate_eel(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var target_id := int(payload.get("target", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var stolen_id := String(payload.get("stolen_id", ""))
+	var dest_realm := String(payload.get("dest", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	var stolen := NetProtocol.find_in_realms(_gs.players[target_id], stolen_id)
+	if card == null or stolen == null:
+		return
+	_tm.initiate_slippery_eel(card, target_id, stolen, dest_realm)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_initiate_trade(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var target_id := int(payload.get("target", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var own_id := String(payload.get("own_id", ""))
+	var their_id := String(payload.get("their_id", ""))
+	var own_dest := String(payload.get("own_dest", ""))
+	var their_dest := String(payload.get("their_dest", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	var own_card := NetProtocol.find_in_realms(_gs.players[actor], own_id)
+	var their_card := NetProtocol.find_in_realms(_gs.players[target_id], their_id)
+	if card == null or own_card == null or their_card == null:
+		return
+	_tm.initiate_trade_winds(card, target_id, own_card, their_dest, their_card, own_dest)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_initiate_toll(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var target_id := int(payload.get("target", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	if card == null:
+		return
+	_tm.initiate_toll_of_the_tides(card, target_id)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_initiate_feast(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	if card == null:
+		return
+	_tm.initiate_mermaids_feast(card)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_initiate_tribute(payload: Dictionary) -> void:
+	var actor := int(payload.get("actor", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var charger_realm := String(payload.get("charger_realm", ""))
+	var target_id := int(payload.get("target", -1))
+	var ht_id := String(payload.get("ht_id", ""))
+	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
+	if card == null:
+		return
+	var ht_card: CardData = null
+	if not ht_id.is_empty():
+		ht_card = NetProtocol.find_in_hand(_gs.players[actor], ht_id)
+	_tm.initiate_tribute(card, charger_realm, target_id, ht_card)
+	_refresh_all()
+	_handle_remote_initiated_action()
+
+func _apply_refuse(payload: Dictionary) -> void:
+	var target_id := int(payload.get("target", -1))
+	var refuser_id := int(payload.get("refuser", -1))
+	var card_id := String(payload.get("card_id", ""))
+	var refuser: PlayerState = _gs.players[refuser_id]
+	var card := NetProtocol.find_in_hand(refuser, card_id)
+	if card == null:
+		return
+	_tm.refuse(target_id, refuser_id, card)
+	_refresh_all()
+	_remote_refusal_decision.emit("refused")
+
+func _apply_resolve(_payload: Dictionary) -> void:
+	_last_resolve_result = _tm.resolve_pending()
+	_refresh_all()
+	_remote_refusal_decision.emit("resolved")
+
+func _apply_settle_payment(payload: Dictionary) -> void:
+	var payer_id := int(payload.get("payer", -1))
+	var receiver_id := int(payload.get("receiver", -1))
+	var amount := int(payload.get("amount", 0))
+	var bank_ids: Array = payload.get("bank_ids", [])
+	var realm_ids: Array = payload.get("realm_ids", [])
+	var payer: PlayerState = _gs.players[payer_id]
+	var receiver: PlayerState = _gs.players[receiver_id]
+	var from_bank: Array[CardData] = []
+	for id in bank_ids:
+		var c := NetProtocol.find_in(payer.bank, String(id))
+		if c != null:
+			from_bank.append(c)
+	var from_realms: Array[CardData] = []
+	for id in realm_ids:
+		var c := NetProtocol.find_in_realms(payer, String(id))
+		if c != null:
+			from_realms.append(c)
+	PaymentResolver.pay(payer, receiver, amount, from_bank, from_realms)
+	_refresh_all()
+	_remote_payment_decided.emit()

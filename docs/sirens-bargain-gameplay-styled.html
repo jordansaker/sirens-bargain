@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Siren's Bargain — game (styled chrome)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600&display=swap');
+  :root{--navy:#0B1D33;--navy-deep:#06111F;--gold:#C9A227;--gold-lt:#E4C25A;--gold-d:#A5811C;
+    --pearl:#EDE6D4;--haze:#9DB6C4;--mist:#C4D6E2;--panel:#14304F;--edge:#22496F;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(120% 80% at 50% 40%, #102b49 0%, #0B1D33 55%, #06111F 100%);color:var(--pearl);height:100%;overflow:hidden;}
+  #game{position:relative;height:100%;}
+
+  /* ---- shared button + text styling (the part to lift) ---- */
+  .btn{font:inherit;font-size:15px;font-weight:600;letter-spacing:.02em;border-radius:11px;cursor:pointer;
+    padding:12px 20px;transition:transform .08s ease,background .2s ease,box-shadow .2s ease,border-color .2s ease;border:1px solid transparent;}
+  .btn:active{transform:translateY(1px);}
+  .btn.ghost{background:rgba(255,255,255,.04);border-color:rgba(201,162,39,.35);color:var(--pearl);}
+  .btn.ghost:hover{background:rgba(201,162,39,.12);border-color:rgba(201,162,39,.65);}
+  .btn.util{background:rgba(255,255,255,.03);border-color:rgba(201,162,39,.28);color:var(--mist);font-size:14px;padding:11px 16px;}
+  .btn.util:hover{background:rgba(201,162,39,.1);}
+  .btn.prim{background:linear-gradient(90deg,var(--gold-d),var(--gold-lt),var(--gold-d));background-size:200% 100%;color:#2A1F07;box-shadow:0 5px 18px rgba(201,162,39,.35);}
+  .btn.prim:hover{background-position:100% 0;box-shadow:0 7px 24px rgba(201,162,39,.5);}
+  .btn.dim{opacity:.35;pointer-events:none;}
+  .btn.gold-text{background:transparent;border-color:transparent;color:var(--gold-lt);}
+  .btn.gold-text:hover{color:#F2D98A;}
+
+  /* ---- player identity ---- */
+  .pbar{position:absolute;display:flex;align-items:center;gap:10px;}
+  .pbar.opp{top:26px;left:30px;} .pbar.you{top:50%;left:30px;transform:translateY(-50%);margin-top:-10px;}
+  .av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--pearl);}
+  .pname{font-size:16px;font-weight:500;color:var(--pearl);}
+  .ptag{font-size:10px;letter-spacing:.06em;color:var(--haze);border:1px solid rgba(201,162,39,.4);border-radius:6px;padding:2px 6px;}
+  .pbank{display:flex;align-items:center;gap:6px;margin-left:2px;}
+  .pbank .p{width:15px;height:15px;border-radius:50%;background:var(--pearl);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:9px;color:#3B2E12;font-weight:600;}
+  .pbank .v{font-size:15px;font-weight:600;color:var(--pearl);}
+  .pbank .lab{font-size:13px;color:var(--haze);}
+
+  .menu{position:absolute;top:24px;right:28px;}
+
+  /* ---- empty realm slots ---- */
+  .slot{position:absolute;left:50%;transform:translateX(-50%);width:44px;height:34px;border-radius:8px;
+    border:1px dashed rgba(201,162,39,.35);display:flex;align-items:center;justify-content:center;color:#4E7FA8;font-size:16px;}
+  .slot.opp{top:150px;} .slot.you{top:64%;}
+
+  /* ---- center: draw pile + turn ---- */
+  .center{position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:26px;}
+  .drawpile{width:86px;height:120px;border-radius:10px;background:var(--navy);border:2px solid var(--gold);position:relative;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,.4);}
+  .drawpile .title{font-family:'Cinzel',Georgia,serif;font-size:13px;font-weight:600;color:var(--pearl);text-align:center;line-height:1.1;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  .drawpile .cnt{font-family:'Cinzel',Georgia,serif;font-size:20px;font-weight:600;color:var(--gold-lt);margin-top:6px;}
+  .turnblock .t1{font-family:'Cinzel',Georgia,serif;font-size:26px;font-weight:600;color:var(--pearl);}
+  .turnblock .t2{font-size:15px;color:var(--haze);margin-top:3px;}
+  .turnblock .dots{display:flex;gap:6px;margin-top:9px;}
+  .turnblock .dots i{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);}
+  .turnblock .dots i.on{background:var(--gold-lt);}
+  .discard{position:absolute;left:calc(50% + 200px);top:34%;transform:translateY(-50%);display:flex;align-items:center;gap:8px;color:var(--haze);font-size:14px;}
+  .discard .d{width:44px;height:60px;border-radius:8px;border:1px dashed rgba(201,162,39,.3);}
+
+  .hint{position:absolute;top:54%;left:50%;transform:translateX(-50%);font-size:15px;color:var(--haze);font-style:italic;}
+  .log{position:absolute;right:30px;top:50%;transform:translateY(-50%);}
+
+  /* ---- hand ---- */
+  .hand{position:absolute;left:16px;bottom:96px;display:flex;align-items:flex-end;}
+  .hc{width:96px;height:150px;border-radius:9px;background:var(--navy);border:1px solid var(--gold);overflow:hidden;margin-right:-30px;
+    box-shadow:0 6px 18px rgba(0,0,0,.45);position:relative;transition:transform .12s ease;}
+  .hc:last-child{margin-right:0;}
+  .hc .bnr{height:18px;display:flex;align-items:center;justify-content:center;}
+  .hc .bnr span{font-size:8px;font-weight:700;letter-spacing:.02em;}
+  .hc .art{height:70px;background:var(--panel);display:flex;align-items:center;justify-content:center;}
+  .hc .art svg{width:80px;height:56px;}
+  .hc .rent{padding:6px 8px;font-size:8px;}
+  .hc .rent .r{display:flex;justify-content:space-between;color:var(--mist);line-height:1.5;}
+  .hc .bd{position:absolute;left:5px;bottom:5px;width:18px;height:18px;border-radius:50%;background:var(--pearl);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#3B2E12;}
+  .hc.sel{transform:translateY(-20px);box-shadow:0 12px 26px rgba(0,0,0,.55),0 0 0 2px var(--gold-lt);z-index:5;}
+
+  /* ---- bottom bar ---- */
+  .bottombar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:14px 22px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(0deg,rgba(6,17,31,.96),rgba(6,17,31,.55) 70%,transparent);}
+  .bottombar .left{display:flex;gap:10px;} .bottombar .right{display:flex;gap:10px;}
+</style>
+</head>
+<body>
+<div id="game">
+
+  <!-- opponent -->
+  <div class="pbar opp">
+    <div class="av" style="background:#2C5A8F">C</div><span class="pname">Coral</span><span class="ptag">AI</span>
+    <span class="pbank"><span class="p">P</span><span class="v">0</span><span class="lab">in bank</span></span>
+  </div>
+  <button class="btn ghost menu">Menu</button>
+  <div class="slot opp">+</div>
+
+  <!-- center -->
+  <div class="center">
+    <div class="drawpile"><div class="title">Siren's<br>Bargain</div><div class="cnt">94</div></div>
+    <div class="turnblock"><div class="t1">Your turn</div><div class="t2">3 plays left</div>
+      <div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i></div></div>
+  </div>
+  <div class="discard"><div class="d"></div><span>0</span></div>
+
+  <!-- you -->
+  <div class="pbar you">
+    <div class="av" style="background:#6E5AA8">M</div><span class="pname">You</span>
+    <span class="pbank"><span class="p">P</span><span class="v">0</span></span>
+  </div>
+  <div class="slot you">+</div>
+
+  <div class="hint">Tap a card in your hand.</div>
+  <button class="btn gold-text log">Log</button>
+
+  <!-- hand -->
+  <div class="hand" id="hand"></div>
+
+  <!-- bottom bar -->
+  <div class="bottombar">
+    <div class="left">
+      <button class="btn util" id="fan">Fan</button>
+      <button class="btn util" id="zoom">Zoom: off</button>
+    </div>
+    <div class="right">
+      <button class="btn ghost dim" data-a="bank">Bank it</button>
+      <button class="btn prim dim" id="playBtn" data-a="play">Play card</button>
+      <button class="btn ghost" data-a="end">End turn</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function motif(id,c){const g={
+    kelp_forest:`<path d="M42 60 Q36 38 44 16" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round"/><path d="M60 60 Q64 34 58 12" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round"/><path d="M78 60 Q72 40 80 18" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round"/>`,
+    coral_gardens:`<path d="M50 60 Q46 40 54 22" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round"/><path d="M70 60 Q72 38 66 20" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round"/><path d="M70 40 Q80 34 84 22" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`,
+    pearls:`<circle cx="48" cy="30" r="11" fill="#EDE6D4"/><circle cx="72" cy="26" r="11" fill="#EDE6D4"/><circle cx="60" cy="46" r="10" fill="#EDE6D4"/>`,
+    ride:`<path d="M40 34 L70 20 L64 34 L70 48 Z" fill="${c}"/><path d="M20 26 L36 30 M18 40 L36 38" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`,
+    krakens_grasp:`<ellipse cx="60" cy="28" rx="18" ry="14" fill="${c}"/><circle cx="54" cy="27" r="3" fill="#0B1D33"/><circle cx="66" cy="27" r="3" fill="#0B1D33"/><path d="M46 40 Q32 54 18 48 M60 42 Q60 60 48 62 M74 40 Q88 54 102 48" fill="none" stroke="${c}" stroke-width="4" stroke-linecap="round"/>`,
+    wild:`<path d="M60 20 L60 50 M45 35 L75 35" stroke="#EDE6D4" stroke-width="6" stroke-linecap="round"/>`};
+    return `<svg viewBox="0 0 120 70">${g[id]||''}</svg>`;}
+
+  const HAND=[
+    {name:'KELP FOREST',bnr:'#7FC9B4',ink:'#0B3A2E',art:'kelp_forest',rent:[['1 card','1'],['2 cards','2'],['3 cards','3']],bank:1},
+    {name:"KRAKEN'S GRASP",bnr:'#A79EE8',ink:'#26215C',art:'krakens_grasp',eff:'Steal a completed set',bank:5},
+    {name:'WILD REALM',bnr:'#BCC9D2',ink:'#2A3944',art:'wild',eff:'Counts as either realm',bank:4},
+    {name:'PEARLS',bnr:'#EDE6D4',ink:'#3B2E12',art:'pearls',eff:'',bank:4},
+    {name:'RIDE THE CURRENT',bnr:'#A79EE8',ink:'#26215C',art:'ride',eff:'Draw 2 extra cards',bank:1},
+    {name:'BLUSHING REEF',bnr:'#F09CBA',ink:'#4B1528',art:'coral_gardens',rent:[['1 card','1'],['2 cards','2'],['3 cards','4']],bank:2},
+  ];
+  const hand=document.getElementById('hand'), playBtn=document.getElementById('playBtn'),
+        bankBtn=document.querySelector('[data-a=bank]');
+  HAND.forEach(c=>{const el=document.createElement('div');el.className='hc';
+    let body = c.rent ? `<div class="rent">${c.rent.map(r=>`<div class="r"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}</div>`
+                      : `<div class="rent"><div class="r" style="justify-content:center;text-align:center">${c.eff||''}</div></div>`;
+    el.innerHTML=`<div class="bnr" style="background:${c.bnr}"><span style="color:${c.ink}">${c.name}</span></div>
+      <div class="art">${motif(c.art,c.bnr)}</div>${body}<div class="bd">${c.bank}</div>`;
+    el.addEventListener('click',()=>{document.querySelectorAll('.hc').forEach(h=>h.classList.remove('sel'));
+      el.classList.add('sel'); playBtn.classList.remove('dim'); bankBtn.classList.remove('dim');
+      document.querySelector('.hint').style.display='none';});
+    hand.appendChild(el);});
+
+  document.getElementById('fan').addEventListener('click',e=>{
+    const f=e.target.textContent==='Fan'; e.target.textContent=f?'Stack':'Fan';});
+  document.getElementById('zoom').addEventListener('click',e=>{
+    const on=e.target.textContent.includes('off'); e.target.textContent=on?'Zoom: on':'Zoom: off';});
+  document.querySelectorAll('[data-a]').forEach(b=>b.addEventListener('click',()=>console.log('action',b.dataset.a)));
+</script>
+</body>
+</html>
