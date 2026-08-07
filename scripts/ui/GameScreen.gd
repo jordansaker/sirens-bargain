@@ -159,6 +159,12 @@ var _plays_dots: HBoxContainer = null
 # was triggered by the opponent's broadcast (i.e. `_apply_resolve` ran the
 # resolve before the local await got the signal).
 var _last_resolve_result: Variant = null
+# Wall-clock the attacker's peer holds so it can pad every resolve with a
+# minimum visible mask duration. Without this, the time between "played
+# Kraken" and "effect fires" leaks whether the defender was actually
+# holding a Refusal card (auto-pass = instant, thinking = 2-3s pause).
+const _REFUSABLE_MASK_MSEC: int = 1500
+var _pending_action_initiated_msec: int = 0
 
 func _ready() -> void:
 	# Grab the online session first so _setup_game can branch on host/guest.
@@ -2996,11 +3002,27 @@ func _run_online_refusable_flow() -> Variant:
 	# Reset the resolve-result cache so we can't return stale data from a
 	# previous action.
 	_last_resolve_result = null
+	# Anchor the mask clock at the moment BOTH peers see the pending action.
+	_pending_action_initiated_msec = Time.get_ticks_msec()
 	for target_id in pending.targets.duplicate():
 		var outcome: String = await _refusal_cycle_for_target(target_id)
 		if outcome == "cancelled":
 			return null
 	return _last_resolve_result
+
+# Hold the attacker's peer until at least _REFUSABLE_MASK_MSEC has passed
+# since the action was initiated. No-op on the defender's peer — they
+# already know their own decision, so masking their view just feels laggy.
+func _wait_for_refusable_mask() -> void:
+	var pending: PendingAction = _gs.pending_action
+	if pending == null:
+		return
+	if pending.initiator_id != HUMAN_ID:
+		return
+	var elapsed := Time.get_ticks_msec() - _pending_action_initiated_msec
+	var remaining := _REFUSABLE_MASK_MSEC - elapsed
+	if remaining > 0:
+		await get_tree().create_timer(remaining / 1000.0).timeout
 
 func _refusal_cycle_for_target(target_id: int) -> String:
 	while true:
@@ -3013,7 +3035,7 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 		if next_refuser == HUMAN_ID:
 			if refusal_card == null:
 				# Can't refuse — resolve.
-				_apply_resolve_locally_and_broadcast()
+				await _apply_resolve_locally_and_broadcast()
 				return "resolved"
 			var wants: bool = await _prompt_local_refusal(pa)
 			if wants:
@@ -3027,7 +3049,7 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 				_refresh_all()
 				# Loop — opponent gets to counter-refuse or resolve.
 			else:
-				_apply_resolve_locally_and_broadcast()
+				await _apply_resolve_locally_and_broadcast()
 				return "resolved"
 		else:
 			# Opponent's turn to decide — wait for their event.
@@ -3040,8 +3062,12 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 	return "cancelled"
 
 func _apply_resolve_locally_and_broadcast() -> void:
-	_last_resolve_result = _tm.resolve_pending()
+	# Broadcast first so the opponent's peer starts its own resolve without
+	# waiting on our mask. THEN pad locally before applying — the attacker
+	# sees a consistent delay regardless of how fast the decision landed.
 	_broadcast({"kind": NetProtocol.KIND_RESOLVE})
+	await _wait_for_refusable_mask()
+	_last_resolve_result = _tm.resolve_pending()
 	_refresh_all()
 
 # Receiver-side entry point — called after applying an INITIATE_* event. We
@@ -3197,6 +3223,10 @@ func _apply_refuse(payload: Dictionary) -> void:
 	_remote_refusal_decision.emit("refused")
 
 func _apply_resolve(_payload: Dictionary) -> void:
+	# Attacker's peer: pad to the minimum mask duration so the visible
+	# resolve timing never leaks whether the defender was thinking or
+	# auto-passing. Defender's peer skips this — they already know.
+	await _wait_for_refusable_mask()
 	_last_resolve_result = _tm.resolve_pending()
 	_refresh_all()
 	_remote_refusal_decision.emit("resolved")
