@@ -256,11 +256,11 @@ func _init_match_stats() -> void:
 	if _gs == null:
 		return
 	for p in _gs.players:
-		_match_stats[p.id] = {"pearls": 0, "steals": 0, "tributes": 0}
+		_match_stats[p.id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
 
 func _track_play_for_stats(actor_id: int, text: String) -> void:
 	if not _match_stats.has(actor_id):
-		_match_stats[actor_id] = {"pearls": 0, "steals": 0, "tributes": 0}
+		_match_stats[actor_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
 	# Outcome-phase resolves: "took X from PY (Slippery Eel)" /
 	# "(Kraken's Grasp)" — count as one steal for the actor.
 	if text.find("(Slippery Eel)") != -1 or text.find("(Kraken's Grasp)") != -1:
@@ -273,8 +273,12 @@ func _track_play_for_stats(actor_id: int, text: String) -> void:
 
 func _track_payment_for_stats(_payer_id: int, receiver_id: int, total: int, _card_count: int) -> void:
 	if not _match_stats.has(receiver_id):
-		_match_stats[receiver_id] = {"pearls": 0, "steals": 0, "tributes": 0}
+		_match_stats[receiver_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
 	_match_stats[receiver_id]["pearls"] += total
+	# Track the single biggest rent collected — one payment total, not the
+	# running sum. Used both in the game-over card and in the API payload.
+	if total > int(_match_stats[receiver_id].get("highest_rent", 0)):
+		_match_stats[receiver_id]["highest_rent"] = total
 
 func _shuffle_draw_pile() -> void:
 	var arr: Array[CardData] = _gs.draw_pile
@@ -921,16 +925,17 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 		pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		head.add_child(pill)
 
-	# 4-stat grid: REALMS, PEARLS, STEALS, TRIBUTES.
+	# 5-stat grid: REALMS, PEARLS, STEALS, TRIBUTES, HIGH RENT.
 	var stats := HBoxContainer.new()
-	stats.add_theme_constant_override("separation", 8)
+	stats.add_theme_constant_override("separation", 6)
 	col.add_child(stats)
-	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0})
+	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0})
 	for spec in [
 		{"v": player.completed_realm_count(), "l": "REALMS"},
 		{"v": int(pstats.get("pearls", 0)), "l": "PEARLS"},
 		{"v": int(pstats.get("steals", 0)), "l": "STEALS"},
 		{"v": int(pstats.get("tributes", 0)), "l": "TRIBUTES"},
+		{"v": int(pstats.get("highest_rent", 0)), "l": "HIGH RENT"},
 	]:
 		stats.add_child(_build_stat_cell(spec["v"], spec["l"]))
 	return card
@@ -1016,6 +1021,7 @@ func _post_match_summary() -> void:
 			"realms": p.completed_realm_count(),
 			"steals": int(stats.get("steals", 0)),
 			"tributes": int(stats.get("tributes", 0)),
+			"highestRent": int(stats.get("highest_rent", 0)),
 		})
 	var payload := {
 		"endedAt": MatchApi.iso_utc_now(),

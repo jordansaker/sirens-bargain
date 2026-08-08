@@ -5,10 +5,13 @@ extends RefCounted
 # completes; GET when the leaderboard opens.
 #
 # API expects and returns the same JSON shape per match:
-#   { "endedAt": ISO-8601 UTC string,
-#     "turns":   int,
-#     "winner":  <name in players[]>,
-#     "players": [ { "name": str, "realms": int, "steals": int, "tributes": int } ] }
+#   { "endedAt":    ISO-8601 UTC string,
+#     "turns":      int,
+#     "winner":     <name in players[]>,
+#     "players":    [ { "name": str, "realms": int, "steals": int,
+#                       "tributes": int, "highestRent": int } ] }
+#   `highestRent` is the single largest rent payment that player received
+#   during the match (max of a single settlement total, not the sum).
 
 const BASE_URL := "https://hq.jordansakerdev.com/api/sirens-bargain"
 # Shared key — this ships in the web build, so it's not a secret in the
