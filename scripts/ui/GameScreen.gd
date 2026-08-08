@@ -1664,9 +1664,20 @@ func _begin_play_realm() -> void:
 	if candidates.size() == 1:
 		_place_realm(candidates[0])
 		return
+	var human: PlayerState = _gs.players[HUMAN_ID]
 	var options: Array = []
 	for r in candidates:
-		options.append({"label": r, "cb": Callable(self, "_place_realm").bind(r)})
+		# Rainbow Conch (and other wilds) can go into any of several realms —
+		# show current progress next to each so the player can pick the set
+		# closest to completion at a glance.
+		var stack: Array = human.realms.get(r, [])
+		var target := Realms.size_of(r)
+		var label := "%s (%d/%d)" % [r, stack.size(), target]
+		options.append({
+			"label": label,
+			"realm": r,
+			"cb": Callable(self, "_place_realm").bind(r),
+		})
 	_state = InteractionState.SELECT_OWN_REALM
 	_show_menu("Play %s in…" % _selected_card.name, options)
 
@@ -2362,11 +2373,13 @@ func _show_menu(title: String, options: Array) -> void:
 		var b := Button.new()
 		b.text = opt["label"]
 		b.custom_minimum_size = Vector2(0, 48)
-		# Colour-code buttons whose label is a realm name so the player can
-		# associate names with the coloured chips on the strips. Non-realm
-		# labels (e.g. "Charge N P", "Bank it") get the default styling.
-		if CardColors.REALM.has(opt["label"]):
-			_style_button_as_realm(b, opt["label"])
+		# Colour-code buttons that reference a realm. Prefer an explicit
+		# "realm" key on the option dict (so labels like "Coral Gardens (2/3)"
+		# still colour correctly); fall back to matching the label itself
+		# for legacy call sites that pass a bare realm name.
+		var realm_key: String = String(opt.get("realm", opt["label"]))
+		if CardColors.REALM.has(realm_key):
+			_style_button_as_realm(b, realm_key)
 		var cb: Callable = opt["cb"]
 		if cb.is_valid():
 			# Await the callable — several menu callbacks are coroutines
