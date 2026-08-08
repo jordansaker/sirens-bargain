@@ -268,21 +268,28 @@ func _add_bubbles() -> void:
 	add_child(particles)
 
 func _bubble_texture() -> Texture2D:
-	# Radial fade — bright centre, transparent edge.
+	# Round soft-edged bubble. Fill from the exact centre (0.5, 0.5) to
+	# an edge at distance 0.5 so the corners of the square texture fall
+	# fully outside the gradient's max radius and rasterise transparent —
+	# no more squared-off edges. Larger source (128px) plus a fine-grained
+	# gradient with a low-alpha shoulder gives a smooth anti-aliased rim
+	# once the particle scales up to card-sized bubbles.
 	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.6, 1.0])
+	g.offsets = PackedFloat32Array([0.0, 0.35, 0.75, 0.95, 1.0])
 	g.colors = PackedColorArray([
-		Color(0.984, 0.968, 0.925, 0.9),
-		Color(0.929, 0.902, 0.831, 0.2),
+		Color(0.984, 0.968, 0.925, 0.95),
+		Color(0.929, 0.902, 0.831, 0.45),
+		Color(0.929, 0.902, 0.831, 0.12),
+		Color(0.929, 0.902, 0.831, 0.02),
 		Color(0.929, 0.902, 0.831, 0.0),
 	])
 	var gt := GradientTexture2D.new()
 	gt.gradient = g
 	gt.fill = GradientTexture2D.FILL_RADIAL
-	gt.fill_from = Vector2(0.35, 0.3)
-	gt.fill_to = Vector2(1.0, 0.9)
-	gt.width = 32
-	gt.height = 32
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 0.5)
+	gt.width = 128
+	gt.height = 128
 	return gt
 
 # --- Divider --------------------------------------------------------------
