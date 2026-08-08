@@ -31,6 +31,7 @@ enum InteractionState {
 	SELECT_OPP_CARD,
 	SELECT_OWN_CARD_FOR_TRADE,
 	SELECT_OWN_DEST_FOR_STOLEN,
+	SELECT_MODIFIER_DEST,
 	DISCARD,
 	AI_TURN,
 	GAME_OVER,
@@ -164,6 +165,11 @@ var _turns_played: int = 0
 # and "opponent broadcast their SETTLE_PAYMENT". End Turn stays disabled
 # during that window so we can't jump to the next turn mid-settlement.
 var _awaiting_payment: bool = false
+# Divider + row for cottage / palace modifiers rendered below the realm
+# cards in the realm-peek modal. Only shown when the peeked realm has
+# modifiers attached; tapping a modifier opens the move flow.
+var _peek_divider: ColorRect = null
+var _peek_modifiers_row: HBoxContainer = null
 # Captures whatever _tm.resolve_pending() returned on the most recent apply,
 # so `_run_online_refusable_flow` can return the outcome even when RESOLVE
 # was triggered by the opponent's broadcast (i.e. `_apply_resolve` ran the
@@ -560,6 +566,8 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_attach_modifier(payload, false)
 		NetProtocol.KIND_REASSIGN_WILD:
 			_apply_reassign_wild(payload)
+		NetProtocol.KIND_MOVE_MODIFIER:
+			_apply_move_modifier(payload)
 		NetProtocol.KIND_INIT_KRAKEN:
 			_apply_initiate_kraken(payload)
 		NetProtocol.KIND_INIT_EEL:
@@ -656,6 +664,26 @@ func _apply_reassign_wild(payload: Dictionary) -> void:
 	if card == null:
 		return
 	_gs.players[actor].reassign_wild(card, String(payload.get("from", "")), String(payload.get("to", "")))
+	_refresh_all()
+
+# Cottage / palace move — the modifier lives on the source realm's
+# modifier stack, look it up there and apply the move on the mirror.
+func _apply_move_modifier(payload: Dictionary) -> void:
+	var actor: int = int(payload.get("actor", -1))
+	if actor < 0:
+		return
+	var player: PlayerState = _gs.players[actor]
+	var from_realm := String(payload.get("from", ""))
+	var to_realm := String(payload.get("to", ""))
+	var card_id := String(payload.get("card_id", ""))
+	var card: CardData = null
+	for m in player.modifiers_on(from_realm):
+		if m.id == card_id:
+			card = m
+			break
+	if card == null:
+		return
+	player.move_modifier(card, from_realm, to_realm)
 	_refresh_all()
 
 # Broadcast a local action to the opponent (no-op in vs-AI mode).
@@ -1382,6 +1410,7 @@ func _is_targeting_state() -> bool:
 		InteractionState.SELECT_OPP_CARD,
 		InteractionState.SELECT_OWN_CARD_FOR_TRADE,
 		InteractionState.SELECT_OWN_DEST_FOR_STOLEN,
+		InteractionState.SELECT_MODIFIER_DEST,
 	]
 
 func _card_is_playable(card: CardData) -> bool:
@@ -1622,6 +1651,17 @@ func _on_own_chip_pressed(player_id: int, realm_name: String) -> void:
 		var t := _selected_card.type
 		if t == CardData.Type.REALM or t == CardData.Type.WILD_REALM:
 			_begin_play_realm()
+		return
+	if _state == InteractionState.SELECT_MODIFIER_DEST:
+		var dests: Array = _ctx.get("move_mod_dests", [])
+		if not dests.has(realm_name):
+			return
+		var mod: CardData = _ctx.get("move_mod_card")
+		var from_r: String = _ctx.get("move_mod_from", "")
+		if mod == null or from_r.is_empty():
+			_reset_to_idle()
+			return
+		_do_move_modifier(mod, from_r, realm_name)
 		return
 	if _state == InteractionState.SELECT_OWN_REALM:
 		if not _valid_realms_for(_selected_card).has(realm_name):
@@ -2612,6 +2652,10 @@ func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Ca
 		view.card = c
 		view.selected.connect(_on_peek_card_selected)
 		_peek_row.add_child(view)
+	# Modifier row below the realm cards — only shown for the human's own
+	# realm (opponent's modifiers stay in the subtitle line only) and only
+	# outside of picker mode (picker only cares about the realm stack).
+	_populate_peek_modifier_row(player, realm_name, pick_cb.is_valid())
 	# Picker mode = cancelling the swap; informational = just closing the peek.
 	_peek_close.text = "Cancel" if pick_cb.is_valid() else "Close"
 	_peek_confirm.visible = false
@@ -2623,8 +2667,59 @@ func _hide_peek() -> void:
 		_peek_root.visible = false
 	if _peek_confirm != null:
 		_peek_confirm.visible = false
+	if _peek_divider != null:
+		_peek_divider.visible = false
+	if _peek_modifiers_row != null:
+		_peek_modifiers_row.visible = false
+		for child in _peek_modifiers_row.get_children():
+			child.queue_free()
 	_ctx.erase("peek_player")
 	_ctx.erase("peek_realm")
+
+# Lazy-build a divider + modifier row inside the PeekVBox, positioned
+# just above the actions row. Idempotent — reuses the nodes on repeat
+# calls, only their children get rebuilt per open.
+func _ensure_peek_modifier_row() -> void:
+	if _peek_divider != null and _peek_modifiers_row != null:
+		return
+	var vbox := _peek_root.get_node_or_null("PeekMargin/PeekVBox") as VBoxContainer
+	if vbox == null:
+		return
+	var actions := vbox.get_node_or_null("PeekActions")
+	var actions_idx := actions.get_index() if actions != null else vbox.get_child_count()
+	_peek_divider = ColorRect.new()
+	_peek_divider.custom_minimum_size = Vector2(0, 1)
+	_peek_divider.color = Color(CardColors.GOLD.r, CardColors.GOLD.g, CardColors.GOLD.b, 0.25)
+	vbox.add_child(_peek_divider)
+	vbox.move_child(_peek_divider, actions_idx)
+	_peek_modifiers_row = HBoxContainer.new()
+	_peek_modifiers_row.add_theme_constant_override("separation", 6)
+	_peek_modifiers_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(_peek_modifiers_row)
+	vbox.move_child(_peek_modifiers_row, actions_idx + 1)
+
+func _populate_peek_modifier_row(player: PlayerState, realm_name: String, in_picker_mode: bool) -> void:
+	_ensure_peek_modifier_row()
+	if _peek_modifiers_row == null:
+		return
+	for child in _peek_modifiers_row.get_children():
+		child.queue_free()
+	var mods := player.modifiers_on(realm_name)
+	var owns_realm := player.id == HUMAN_ID
+	var human_turn := _gs.current_player_index == HUMAN_ID
+	var show := not in_picker_mode and not mods.is_empty()
+	_peek_divider.visible = show
+	_peek_modifiers_row.visible = show
+	if not show:
+		return
+	for m in mods:
+		var view := CardView.new()
+		view.card = m
+		# Tapping is only meaningful on your own realms during your turn —
+		# opponent modifiers are shown for information only.
+		if owns_realm and human_turn:
+			view.selected.connect(_on_peek_modifier_selected.bind(m, realm_name))
+		_peek_modifiers_row.add_child(view)
 
 # Peek-modal close button. In picker mode (Eel / Trade Winds mid-flow) closing
 # the peek used to strand the player in a non-IDLE state — now it cancels the
@@ -2732,6 +2827,58 @@ static func _modifier_display_name(m: CardData) -> String:
 		"coral_cottage": return "Coral Cottage"
 		"pearl_palace": return "Pearl Palace"
 	return m.name
+
+# Tap on a Coral Cottage / Pearl Palace card inside the realm-peek modifier
+# row. Closes the peek and enters SELECT_MODIFIER_DEST, popping the chips
+# of every legal destination realm on the local player's board.
+func _on_peek_modifier_selected(_card: CardData, mod: CardData, from_realm: String) -> void:
+	if _gs.current_player_index != HUMAN_ID:
+		return
+	_hide_peek()
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	var destinations: Array[String] = []
+	for r in human.realms.keys():
+		if r == from_realm:
+			continue
+		if not human.is_realm_complete(r):
+			continue
+		if mod.action_effect == "coral_cottage" and human.has_cottage(r):
+			continue
+		if mod.action_effect == "pearl_palace":
+			# Palace can only move onto a set that already has a Coral Cottage
+			# and doesn't already have another Palace on it.
+			if not human.has_cottage(r):
+				continue
+			if human.has_palace(r):
+				continue
+		destinations.append(r)
+	if destinations.is_empty():
+		_prompt("Nowhere to move %s." % _modifier_display_name(mod))
+		return
+	_ctx["move_mod_card"] = mod
+	_ctx["move_mod_from"] = from_realm
+	_ctx["move_mod_dests"] = destinations
+	_state = InteractionState.SELECT_MODIFIER_DEST
+	_player_board.pop_realms(destinations)
+	_refresh_actions()
+	_prompt("Tap a highlighted realm chip to move %s." % _modifier_display_name(mod))
+
+func _do_move_modifier(mod: CardData, from_realm: String, to_realm: String) -> void:
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	if not human.move_modifier(mod, from_realm, to_realm):
+		_prompt("Can't move %s there." % _modifier_display_name(mod))
+		_reset_to_idle()
+		return
+	_prompt("Moved %s: %s → %s." % [_modifier_display_name(mod), from_realm, to_realm])
+	_broadcast({
+		"kind": NetProtocol.KIND_MOVE_MODIFIER,
+		"actor": HUMAN_ID,
+		"card_id": mod.id,
+		"from": from_realm,
+		"to": to_realm,
+	})
+	_refresh_all()
+	_reset_to_idle()
 
 # --- Human-payment picker -------------------------------------------------
 #

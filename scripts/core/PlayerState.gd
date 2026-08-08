@@ -123,6 +123,34 @@ func attach_modifier(card: CardData, realm: String) -> void:
 	mods.append(card)
 	realm_modifiers[realm] = mods
 
+# Move an already-laid Coral Cottage / Pearl Palace between two of this
+# player's completed realms. Free action — doesn't consume a play. Palace
+# still requires a Coral Cottage on the destination.
+func move_modifier(card: CardData, from_realm: String, to_realm: String) -> bool:
+	if from_realm == to_realm:
+		return false
+	if not is_realm_complete(to_realm):
+		return false
+	var from_stack: Array[CardData] = modifiers_on(from_realm)
+	if not from_stack.has(card):
+		return false
+	if card.action_effect == "coral_cottage" and has_cottage(to_realm):
+		return false
+	if card.action_effect == "pearl_palace":
+		if not has_cottage(to_realm):
+			return false
+		if has_palace(to_realm):
+			return false
+	from_stack.erase(card)
+	if from_stack.is_empty():
+		realm_modifiers.erase(from_realm)
+	else:
+		realm_modifiers[from_realm] = from_stack
+	var to_stack: Array[CardData] = modifiers_on(to_realm)
+	to_stack.append(card)
+	realm_modifiers[to_realm] = to_stack
+	return true
+
 func receive_realm_card(card: CardData, target_realm: String) -> void:
 	assert(card.type == CardData.Type.REALM or card.type == CardData.Type.WILD_REALM,
 		"Only realm and wild cards can be received into a realm")
