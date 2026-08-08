@@ -21,6 +21,7 @@ var target: int = 0
 var mode: int = Mode.NORMAL
 var has_cottage: bool = false
 var has_palace: bool = false
+var has_conch: bool = false
 
 var _bar: Panel        # coloured header with the realm name overlaid
 var _bar_label: Label
@@ -29,6 +30,7 @@ var _col: VBoxContainer
 var _modifier_row: HBoxContainer
 var _cottage_icon: TextureRect
 var _palace_icon: TextureRect
+var _conch_icon: TextureRect
 var _pop_tween: Tween = null
 var _popped: bool = false
 
@@ -97,6 +99,22 @@ func _ready() -> void:
 	_palace_icon.visible = false
 	_modifier_row.add_child(_palace_icon)
 
+	# Rainbow Conch marker — pinned to the LEFT edge of the header so the
+	# realm name still centres between it and the cottage/palace icons on
+	# the right. Multi-colour SVG, so no modulate override.
+	_conch_icon = TextureRect.new()
+	_conch_icon.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	_conch_icon.offset_left = 3
+	_conch_icon.offset_right = 17
+	_conch_icon.custom_minimum_size = Vector2(14, 14)
+	_conch_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_conch_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_conch_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_conch_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_conch_icon.texture = load("res://assets/icons/rainbow-conch.svg")
+	_conch_icon.visible = false
+	_bar.add_child(_conch_icon)
+
 	_count = Label.new()
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -107,12 +125,13 @@ func _ready() -> void:
 
 	_refresh()
 
-func configure(name_: String, current_: int, target_: int, complete: bool, has_cottage_: bool = false, has_palace_: bool = false) -> void:
+func configure(name_: String, current_: int, target_: int, complete: bool, has_cottage_: bool = false, has_palace_: bool = false, has_conch_: bool = false) -> void:
 	realm_name = name_
 	current = current_
 	target = target_
 	has_cottage = has_cottage_
 	has_palace = has_palace_
+	has_conch = has_conch_
 	mode = Mode.COMPLETE if complete else Mode.NORMAL
 	_refresh()
 
@@ -196,3 +215,5 @@ func _paint_bar(name_: String, complete: bool) -> void:
 		_cottage_icon.visible = has_cottage
 	if _palace_icon != null:
 		_palace_icon.visible = has_palace
+	if _conch_icon != null:
+		_conch_icon.visible = has_conch

@@ -214,8 +214,13 @@ func _populate_chips() -> void:
 		var chip := RealmChip.new()
 		chip.chip_pressed.connect(func(name_): realm_chip_pressed.emit(player.id, name_))
 		_chip_row.add_child(chip)
+		var has_conch := false
+		for c in stack:
+			if c is CardData and (c as CardData).is_rainbow_conch():
+				has_conch = true
+				break
 		chip.configure(r, stack.size(), Realms.size_of(r), player.is_realm_complete(r),
-			player.has_cottage(r), player.has_palace(r))
+			player.has_cottage(r), player.has_palace(r), has_conch)
 	# Trailing "+" placeholder — a hint that new realms can still be started.
 	# Tappable on your own strip: the GameScreen uses it as a "start a new
 	# realm" shortcut when a wild card is selected in hand. It still emits
