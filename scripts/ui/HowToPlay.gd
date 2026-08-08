@@ -240,11 +240,11 @@ func _build_basics_pane() -> VBoxContainer:
 	var pane := VBoxContainer.new()
 	pane.add_theme_constant_override("separation", 14)
 	# The Goal — 2P vs 3+P win condition explicit per user request.
-	pane.add_child(_build_rules_card("⚓", "The Goal",
+	pane.add_child(_build_rules_card("res://assets/icons/anchor.svg", "The Goal",
 		"Be the first to lay down [b]three complete realm sets[/b] (or [b]four[/b] in a two-player match). Each realm needs a set number of cards — small ones like Tide Pools need 2, bigger ones like Ocean Currents need 4."))
 	pane.add_child(_build_rules_card("1", "Your Turn",
 		"Draw [b]2 cards[/b] to start (draw 5 if your hand is empty). Then play [b]up to 3 cards[/b]: bank Pearls, lay down realms, or play action cards. End with [b]7 or fewer[/b] cards in hand."))
-	pane.add_child(_build_rules_card("♛", "Winning",
+	pane.add_child(_build_rules_card("res://assets/icons/crown.svg", "Winning",
 		"The moment your final realm is complete, you win — even mid-turn. Opponents will try to steal your sets with actions, so a realm isn't safe until the game ends."))
 	return pane
 
@@ -273,7 +273,7 @@ func _build_actions_pane() -> VBoxContainer:
 
 # --- Rules card factory --------------------------------------------------
 
-func _build_rules_card(number_glyph: String, title_text: String, body_bbcode: String) -> PanelContainer:
+func _build_rules_card(badge_ref: String, title_text: String, body_bbcode: String) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _panel_style())
 
@@ -288,7 +288,7 @@ func _build_rules_card(number_glyph: String, title_text: String, body_bbcode: St
 	col.add_theme_constant_override("separation", 8)
 	margin.add_child(col)
 
-	col.add_child(_build_card_title(number_glyph, title_text))
+	col.add_child(_build_card_title(badge_ref, title_text))
 	col.add_child(_build_body_text(body_bbcode))
 	return panel
 
@@ -298,13 +298,25 @@ func _build_rules_card_with_chips(title_text: String, body_bbcode: String, chips
 	col.add_child(_build_chip_row(chips))
 	return panel
 
-func _build_card_title(number_glyph: String, title_text: String) -> HBoxContainer:
+func _build_card_title(badge_ref: String, title_text: String) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 9)
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
-	if not number_glyph.is_empty():
+	# `badge_ref` is either a res:// path to an SVG icon or a short glyph/number
+	# to render as a text pill. Icons render as a TextureRect so we don't rely
+	# on platform Unicode glyph support (the crown/anchor Unicode chars fell
+	# back to tofu on the web export).
+	if badge_ref.begins_with("res://"):
+		var icon := TextureRect.new()
+		icon.texture = load(badge_ref)
+		icon.custom_minimum_size = Vector2(26, 26)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(icon)
+	elif not badge_ref.is_empty():
 		var badge := Label.new()
-		badge.text = number_glyph
+		badge.text = badge_ref
 		badge.custom_minimum_size = Vector2(26, 26)
 		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER

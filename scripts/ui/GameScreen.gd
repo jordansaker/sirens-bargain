@@ -1452,13 +1452,62 @@ func _flash_turn_banner(text: String) -> void:
 	if _turn_banner == null:
 		return
 	_turn_banner.text = text
+	_turn_banner.add_theme_font_size_override("font_size", 32)
 	_turn_banner.modulate.a = 0.0
+	_turn_banner.scale = Vector2.ONE
+	_turn_banner.pivot_offset = _turn_banner.size * 0.5
 	var tw := create_tween()
 	tw.tween_property(_turn_banner, "modulate:a", 1.0, 0.18)
 	tw.tween_interval(0.55)
 	tw.tween_property(_turn_banner, "modulate:a", 0.0, 0.35)
 	if _sfx != null:
 		_sfx.play("turn_change")
+
+# Bigger, poppier variant of the turn banner for action-card plays. Scales up
+# with an elastic pop and fades out — deliberately more attention-grabbing so
+# players can't miss that an action landed.
+func _flash_action_banner(action_name: String) -> void:
+	if _turn_banner == null:
+		return
+	_turn_banner.text = action_name
+	_turn_banner.add_theme_font_size_override("font_size", 46)
+	_turn_banner.modulate.a = 0.0
+	_turn_banner.pivot_offset = _turn_banner.size * 0.5
+	_turn_banner.scale = Vector2(0.55, 0.55)
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(_turn_banner, "modulate:a", 1.0, 0.18)
+	tw.tween_property(_turn_banner, "scale", Vector2.ONE, 0.42) \
+		.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tw.set_parallel(false)
+	tw.tween_interval(0.75)
+	tw.set_parallel(true)
+	tw.tween_property(_turn_banner, "modulate:a", 0.0, 0.35)
+	tw.tween_property(_turn_banner, "scale", Vector2(1.08, 1.08), 0.35)
+	if _sfx != null:
+		_sfx.play("action")
+
+# Map a raw play_logged verb to a display-ready action title (ALL CAPS with a
+# bang), or "" for lines that shouldn't flash (banks, lays, draws, payments,
+# refusals — refusals get their own banner earlier in _on_play_logged).
+static func _extract_action_flash(text: String) -> String:
+	if text.begins_with("played "):
+		var tail := text.substr(7)
+		# Trim the trailing "on ..." / "on their ..." target clause so the
+		# banner is just the card name.
+		var cut := tail.find(" on ")
+		if cut != -1:
+			tail = tail.substr(0, cut)
+		return (tail.strip_edges() + "!").to_upper()
+	if text.begins_with("attached "):
+		var tail2 := text.substr(9)
+		var cut2 := tail2.find(" to ")
+		if cut2 != -1:
+			tail2 = tail2.substr(0, cut2)
+		return (tail2.strip_edges() + "!").to_upper()
+	if text.find("Ride the Current") != -1:
+		return "RIDE THE CURRENT!"
+	return ""
 
 # --- Play log ------------------------------------------------------------
 
@@ -1488,6 +1537,13 @@ func _on_play_logged(actor_id: int, text: String) -> void:
 		if text.begins_with("counter-refused"):
 			banner_text = "%s COUNTER-REFUSED!" % who.to_upper()
 		_flash_turn_banner(banner_text)
+	else:
+		# Every other action-card play gets a big centred pop so it's obvious
+		# what just landed without having to scan the log. Skip realm lays,
+		# banks, plain draws, payments, and any refusal follow-ups.
+		var action_name := _extract_action_flash(text)
+		if not action_name.is_empty():
+			_flash_action_banner(action_name)
 	# Bucket the log line into an SFX event by looking at the leading verb.
 	if _sfx != null:
 		if text.begins_with("banked"):
