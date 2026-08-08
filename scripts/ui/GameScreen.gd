@@ -2692,9 +2692,19 @@ func _on_peek_card_selected(card: CardData) -> void:
 			candidates.append(r)
 	if candidates.is_empty():
 		return
+	var human: PlayerState = _gs.players[HUMAN_ID]
 	var options: Array = []
 	for r in candidates:
-		options.append({"label": r, "cb": Callable(self, "_do_wild_shift").bind(card, realm, r)})
+		# Match the play-realm menu — show current N/M so you can spot the
+		# set closest to completion when shifting a wild between realms.
+		var stack: Array = human.realms.get(r, [])
+		var target := Realms.size_of(r)
+		var label := "%s (%d/%d)" % [r, stack.size(), target]
+		options.append({
+			"label": label,
+			"realm": r,
+			"cb": Callable(self, "_do_wild_shift").bind(card, realm, r),
+		})
 	# Close the peek before showing the destination menu so overlays don't
 	# stack weirdly; we'll reopen the peek on the destination after the move.
 	_hide_peek()
