@@ -154,6 +154,12 @@ var _fan_last_toggle_msec: int = 0
 var _zoom_enabled: bool = false
 # 3 dots below the plays counter — filled = plays remaining, dim = spent.
 var _plays_dots: HBoxContainer = null
+# Match timer + stats — populated at setup, updated live via TurnManager
+# signals, snapshotted onto the game-over card list.
+var _match_start_msec: int = 0
+var _match_stats: Dictionary = {} # player_id -> {"pearls":int,"steals":int,"tributes":int}
+var _turns_played: int = 0
+
 # True on the attacker's peer between "action resolved with an owed dict"
 # and "opponent broadcast their SETTLE_PAYMENT". End Turn stays disabled
 # during that window so we can't jump to the next turn mid-settlement.
@@ -234,6 +240,33 @@ func _setup_game() -> void:
 	else:
 		# Vs-AI mode: the opponent seat is an AIOpponent.
 		_ais[1] = AIOpponent.new(1)
+	_init_match_stats()
+
+func _init_match_stats() -> void:
+	_match_start_msec = Time.get_ticks_msec()
+	_match_stats.clear()
+	if _gs == null:
+		return
+	for p in _gs.players:
+		_match_stats[p.id] = {"pearls": 0, "steals": 0, "tributes": 0}
+
+func _track_play_for_stats(actor_id: int, text: String) -> void:
+	if not _match_stats.has(actor_id):
+		_match_stats[actor_id] = {"pearls": 0, "steals": 0, "tributes": 0}
+	# Outcome-phase resolves: "took X from PY (Slippery Eel)" /
+	# "(Kraken's Grasp)" — count as one steal for the actor.
+	if text.find("(Slippery Eel)") != -1 or text.find("(Kraken's Grasp)") != -1:
+		_match_stats[actor_id]["steals"] += 1
+	# Resolved tribute-family debts: only fire once per action so we don't
+	# double-count on both initiate + resolve.
+	if text.begins_with("Tribute on ") or text.begins_with("Toll of the Tides") \
+			or text.begins_with("Mermaid's Feast") or text.begins_with("Siren's Toll"):
+		_match_stats[actor_id]["tributes"] += 1
+
+func _track_payment_for_stats(_payer_id: int, receiver_id: int, total: int, _card_count: int) -> void:
+	if not _match_stats.has(receiver_id):
+		_match_stats[receiver_id] = {"pearls": 0, "steals": 0, "tributes": 0}
+	_match_stats[receiver_id]["pearls"] += total
 
 func _shuffle_draw_pile() -> void:
 	var arr: Array[CardData] = _gs.draw_pile
@@ -358,6 +391,7 @@ func _do_end_turn(discards: Array[CardData]) -> void:
 			"discard_ids": ids,
 		})
 	_tm.end_turn(discards)
+	_turns_played += 1
 	if _is_online:
 		_after_turn_transition()
 	else:
@@ -573,6 +607,7 @@ func _apply_end_turn(payload: Dictionary) -> void:
 		if c != null:
 			discards.append(c)
 	_tm.end_turn(discards)
+	_turns_played += 1
 	_after_turn_transition()
 
 func _apply_bank(payload: Dictionary) -> void:
@@ -663,34 +698,248 @@ func _run_ai_turns() -> void:
 
 func _show_game_over() -> void:
 	_state = InteractionState.GAME_OVER
-	var winner_id := _gs.winner()
-	var winner_is_you := winner_id == HUMAN_ID
-	_game_over_title.text = "You win!" if winner_is_you else "%s wins" % OPPONENT_NAME
-	_game_over_subtitle.text = "First to %d completed realms." % _gs.sets_to_win()
-	# Populate per-player stat rows so the player can see the final board.
-	for child in _game_over_stats.get_children():
+	# Widen + tall enough for two player cards + button rows. Uses fixed
+	# offset (anchored centre) so it works on any viewport size.
+	_game_over_panel.offset_left = -230
+	_game_over_panel.offset_right = 230
+	_game_over_panel.offset_top = -320
+	_game_over_panel.offset_bottom = 320
+	# Rebuild the panel's content column each time so a rematch (via
+	# reload) picks up fresh state, not stale rows from the previous match.
+	var vbox := _game_over_panel.get_node_or_null("GameOverMargin/GameOverVBox") as VBoxContainer
+	if vbox == null:
+		return
+	for child in vbox.get_children():
 		child.queue_free()
-	for p in _gs.players:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
-		var name_lbl := Label.new()
-		name_lbl.text = HUMAN_NAME if p.id == HUMAN_ID else OPPONENT_NAME
-		name_lbl.add_theme_font_size_override("font_size", 13)
-		name_lbl.add_theme_color_override("font_color", CardColors.PEARL if p.id == winner_id else CardColors.MIST)
-		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(name_lbl)
-		var stats_lbl := Label.new()
-		stats_lbl.text = "%d sets · %d P" % [p.completed_realm_count(), p.total_bank_value()]
-		stats_lbl.add_theme_font_size_override("font_size", 13)
-		stats_lbl.add_theme_color_override("font_color", CardColors.MIST)
-		row.add_child(stats_lbl)
-		_game_over_stats.add_child(row)
+	vbox.add_theme_constant_override("separation", 10)
+	_build_game_over_content(vbox)
 	_game_over_scrim.visible = true
 	_game_over_panel.visible = true
 	_prompt("Game over.")
 	_refresh_all()
 	if _sfx != null:
 		_sfx.play("game_over")
+
+func _build_game_over_content(vbox: VBoxContainer) -> void:
+	var winner_id := _gs.winner()
+
+	# Victory emblem + labels
+	var emblem := TextureRect.new()
+	emblem.texture = load("res://assets/icons/emblem.svg")
+	emblem.custom_minimum_size = Vector2(78, 78)
+	emblem.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	emblem.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	emblem.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(emblem)
+
+	var vlabel := Label.new()
+	vlabel.text = "VICTORY"
+	vlabel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vlabel.add_theme_font_override("font", _chrome_serif_font())
+	vlabel.add_theme_font_size_override("font_size", 13)
+	vlabel.add_theme_color_override("font_color", CardColors.GOLD)
+	vbox.add_child(vlabel)
+
+	var winner_name := HUMAN_NAME if winner_id == HUMAN_ID else OPPONENT_NAME
+	var vwinner := Label.new()
+	vwinner.text = "%s WINS!" % winner_name.to_upper()
+	vwinner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vwinner.add_theme_font_override("font", _chrome_serif_font())
+	vwinner.add_theme_font_size_override("font_size", 32)
+	vwinner.add_theme_color_override("font_color", CardColors.PEARL)
+	vwinner.add_theme_constant_override("shadow_offset_y", 2)
+	vwinner.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	vbox.add_child(vwinner)
+
+	var vmeta := Label.new()
+	vmeta.text = "%d realms · %d turns · %s" % [
+		_gs.players[winner_id].completed_realm_count(),
+		_turns_played,
+		_format_match_time(),
+	]
+	vmeta.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vmeta.add_theme_font_size_override("font_size", 12)
+	vmeta.add_theme_color_override("font_color", CardColors.HAZE)
+	vbox.add_child(vmeta)
+
+	# Player cards.
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 6)
+	vbox.add_child(gap)
+	for p in _gs.players:
+		vbox.add_child(_build_player_card(p, p.id == winner_id))
+
+	# Buttons.
+	var gap2 := Control.new()
+	gap2.custom_minimum_size = Vector2(0, 8)
+	vbox.add_child(gap2)
+	var rematch := Button.new()
+	rematch.text = "Rematch"
+	rematch.custom_minimum_size = Vector2(0, 48)
+	rematch.add_theme_font_size_override("font_size", 15)
+	_style_button_as(rematch, "prim")
+	rematch.pressed.connect(_on_play_again_pressed)
+	vbox.add_child(rematch)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	vbox.add_child(row)
+
+	var lb_btn := Button.new()
+	lb_btn.text = "Leaderboard"
+	lb_btn.custom_minimum_size = Vector2(0, 44)
+	lb_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lb_btn.add_theme_font_size_override("font_size", 14)
+	_style_button_as(lb_btn, "ghost")
+	lb_btn.pressed.connect(_on_leaderboard_pressed)
+	row.add_child(lb_btn)
+
+	var mm_btn := Button.new()
+	mm_btn.text = "Main menu"
+	mm_btn.custom_minimum_size = Vector2(0, 44)
+	mm_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mm_btn.add_theme_font_size_override("font_size", 14)
+	_style_button_as(mm_btn, "ghost")
+	mm_btn.pressed.connect(_on_main_menu_pressed)
+	row.add_child(mm_btn)
+
+func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.043, 0.114, 0.2, 0.72)
+	sb.border_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.6 if is_winner else 0.2)
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.corner_radius_top_left = 14
+	sb.corner_radius_top_right = 14
+	sb.corner_radius_bottom_left = 14
+	sb.corner_radius_bottom_right = 14
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 12
+	sb.content_margin_bottom = 12
+	if is_winner:
+		sb.shadow_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.25)
+		sb.shadow_size = 8
+	card.add_theme_stylebox_override("panel", sb)
+
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	card.add_child(col)
+
+	# Header: avatar + name + WINNER pill.
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	col.add_child(head)
+
+	var name_text := HUMAN_NAME if player.id == HUMAN_ID else OPPONENT_NAME
+	var avatar := Label.new()
+	avatar.text = name_text.substr(0, 1).to_upper()
+	avatar.custom_minimum_size = Vector2(34, 34)
+	avatar.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	avatar.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	avatar.add_theme_font_size_override("font_size", 14)
+	avatar.add_theme_color_override("font_color", Color("0B1D33"))
+	var av_sb := StyleBoxFlat.new()
+	av_sb.bg_color = Color("6E5AA8") if player.id == HUMAN_ID else Color("7FA8E8")
+	av_sb.corner_radius_top_left = 17
+	av_sb.corner_radius_top_right = 17
+	av_sb.corner_radius_bottom_left = 17
+	av_sb.corner_radius_bottom_right = 17
+	avatar.add_theme_stylebox_override("normal", av_sb)
+	head.add_child(avatar)
+
+	var name_lbl := Label.new()
+	name_lbl.text = name_text
+	name_lbl.add_theme_font_size_override("font_size", 16)
+	name_lbl.add_theme_color_override("font_color", CardColors.PEARL)
+	name_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(name_lbl)
+
+	if is_winner:
+		var pill := Label.new()
+		pill.text = "WINNER"
+		pill.add_theme_font_size_override("font_size", 10)
+		pill.add_theme_color_override("font_color", Color("2A1F07"))
+		var pill_sb := StyleBoxFlat.new()
+		pill_sb.bg_color = CH_GOLD
+		pill_sb.corner_radius_top_left = 6
+		pill_sb.corner_radius_top_right = 6
+		pill_sb.corner_radius_bottom_left = 6
+		pill_sb.corner_radius_bottom_right = 6
+		pill_sb.content_margin_left = 7
+		pill_sb.content_margin_right = 7
+		pill_sb.content_margin_top = 3
+		pill_sb.content_margin_bottom = 3
+		pill.add_theme_stylebox_override("normal", pill_sb)
+		pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		head.add_child(pill)
+
+	# 4-stat grid: REALMS, PEARLS, STEALS, TRIBUTES.
+	var stats := HBoxContainer.new()
+	stats.add_theme_constant_override("separation", 8)
+	col.add_child(stats)
+	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0})
+	for spec in [
+		{"v": player.completed_realm_count(), "l": "REALMS"},
+		{"v": int(pstats.get("pearls", 0)), "l": "PEARLS"},
+		{"v": int(pstats.get("steals", 0)), "l": "STEALS"},
+		{"v": int(pstats.get("tributes", 0)), "l": "TRIBUTES"},
+	]:
+		stats.add_child(_build_stat_cell(spec["v"], spec["l"]))
+	return card
+
+func _build_stat_cell(value: int, label: String) -> PanelContainer:
+	var cell := PanelContainer.new()
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.04)
+	sb.corner_radius_top_left = 10
+	sb.corner_radius_top_right = 10
+	sb.corner_radius_bottom_left = 10
+	sb.corner_radius_bottom_right = 10
+	sb.content_margin_left = 4
+	sb.content_margin_right = 4
+	sb.content_margin_top = 7
+	sb.content_margin_bottom = 7
+	cell.add_theme_stylebox_override("panel", sb)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	cell.add_child(col)
+	var v := Label.new()
+	v.text = str(value)
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_theme_font_override("font", _chrome_serif_font())
+	v.add_theme_font_size_override("font_size", 18)
+	v.add_theme_color_override("font_color", CardColors.PEARL)
+	col.add_child(v)
+	var l := Label.new()
+	l.text = label
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 9)
+	l.add_theme_color_override("font_color", CardColors.HAZE)
+	col.add_child(l)
+	return cell
+
+func _format_match_time() -> String:
+	var elapsed_ms: int = Time.get_ticks_msec() - _match_start_msec
+	if _match_start_msec == 0:
+		elapsed_ms = 0
+	var total_s: int = elapsed_ms / 1000
+	var mins: int = total_s / 60
+	var secs: int = total_s % 60
+	return "%d:%02d" % [mins, secs]
+
+func _on_leaderboard_pressed() -> void:
+	_reset_net_session()
+	get_tree().change_scene_to_file("res://scenes/LeaderboardScreen.tscn")
+
+func _reset_net_session() -> void:
+	var ns := get_tree().root.get_node_or_null("NetSession")
+	if ns != null and ns.has_method("reset"):
+		ns.reset()
 
 func _hide_game_over() -> void:
 	if _game_over_panel != null:
@@ -1124,6 +1373,9 @@ func _flash_turn_banner(text: String) -> void:
 # --- Play log ------------------------------------------------------------
 
 func _on_play_logged(actor_id: int, text: String) -> void:
+	# Feed the match-stats tracker before the display transforms mangle the
+	# text (we rely on the raw resolver-output verbs to bucket steals/tributes).
+	_track_play_for_stats(actor_id, text)
 	# Text uses "P0"/"P1" placeholders for player references — substitute
 	# names for display. Actor gets bolded before the verb.
 	var who := HUMAN_NAME if actor_id == HUMAN_ID else OPPONENT_NAME
@@ -2128,10 +2380,11 @@ func _on_bank_view_requested(player_id: int) -> void:
 		return
 	_show_bank_peek(player_id)
 
-func _on_payment_applied(payer_id: int, receiver_id: int, _total: int, card_count: int) -> void:
+func _on_payment_applied(payer_id: int, receiver_id: int, total: int, card_count: int) -> void:
+	_track_payment_for_stats(payer_id, receiver_id, total, card_count)
 	# Fly a small burst of pearl icons from the payer's board area to the
 	# receiver's bank pill. Capped so a 6-card settle doesn't spawn 6 sprites.
-	var count := clamp(card_count, 1, 6)
+	var count: int = clamp(card_count, 1, 6)
 	var src := _board_center(payer_id)
 	var dst := _bank_pill_center(receiver_id)
 	if src == Vector2.ZERO or dst == Vector2.ZERO:

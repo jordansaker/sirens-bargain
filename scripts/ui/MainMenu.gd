@@ -142,8 +142,8 @@ func _build_ui() -> void:
 		"How to Play", "",
 		ICON_RULES, "ghost", _on_rules_pressed))
 	buttons.add_child(_make_menu_button(
-		"Settings", "",
-		ICON_SETTINGS, "ghost", _on_settings_pressed))
+		"Leaderboard", "",
+		ICON_SETTINGS, "ghost", _on_leaderboard_pressed))
 
 	_add_sound_button()
 	_add_footer()
@@ -535,6 +535,9 @@ func _on_ai_pressed() -> void:
 
 func _on_rules_pressed() -> void:
 	get_tree().change_scene_to_file(HOW_TO_PLAY_PATH)
+
+func _on_leaderboard_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/LeaderboardScreen.tscn")
 
 func _on_settings_pressed() -> void:
 	# No settings screen yet — flash a subtle notice above the footer so the
