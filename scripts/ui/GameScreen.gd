@@ -2449,7 +2449,7 @@ func _settle_owed_to_human(owed: Dictionary, label: String) -> void:
 		_tm.log_payment(payer_id, HUMAN_ID, from_bank, from_realms)
 		total += paid
 	if total > 0:
-		_prompt("%s → %d pearls." % [label, total])
+		_prompt("%s paid: %d pearls." % [label, total])
 	elif owed.is_empty():
 		_prompt("%s — no takers." % label)
 
@@ -2915,7 +2915,7 @@ func _do_wild_shift(card: CardData, from_realm: String, to_realm: String) -> voi
 	_hide_menu()
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	human.reassign_wild(card, from_realm, to_realm)
-	_prompt("%s moved: %s → %s." % [card.name, from_realm, to_realm])
+	_prompt("%s moved from %s to %s." % [card.name, from_realm, to_realm])
 	_broadcast({
 		"kind": NetProtocol.KIND_REASSIGN_WILD,
 		"actor": HUMAN_ID,
@@ -2975,7 +2975,7 @@ func _do_move_modifier(mod: CardData, from_realm: String, to_realm: String) -> v
 		_prompt("Can't move %s there." % _modifier_display_name(mod))
 		_reset_to_idle()
 		return
-	_prompt("Moved %s: %s → %s." % [_modifier_display_name(mod), from_realm, to_realm])
+	_prompt("Moved %s from %s to %s." % [_modifier_display_name(mod), from_realm, to_realm])
 	_broadcast({
 		"kind": NetProtocol.KIND_MOVE_MODIFIER,
 		"actor": HUMAN_ID,
