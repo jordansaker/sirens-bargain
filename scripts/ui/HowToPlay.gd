@@ -144,12 +144,13 @@ func _add_topbar() -> void:
 	back.pressed.connect(_on_back_pressed)
 	row.add_child(back)
 
-	var back_glyph := Label.new()
-	back_glyph.text = "‹"
-	back_glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	back_glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	back_glyph.add_theme_font_size_override("font_size", 26)
-	back_glyph.add_theme_color_override("font_color", PEARL)
+	# Real SVG chevron instead of the U+2039 glyph (renders inconsistently
+	# in Godot's bundled Noto Sans on some platforms).
+	var back_glyph := TextureRect.new()
+	back_glyph.texture = load("res://assets/icons/chevron-left.svg")
+	back_glyph.custom_minimum_size = Vector2(18, 18)
+	back_glyph.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	back_glyph.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	back_glyph.set_anchors_preset(Control.PRESET_FULL_RECT)
 	back_glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	back.add_child(back_glyph)

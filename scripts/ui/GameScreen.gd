@@ -321,6 +321,10 @@ func _wire_signals() -> void:
 	_card_peek_close.pressed.connect(_hide_card_peek)
 	_card_peek_prev.pressed.connect(func(): _cycle_card_peek(-1))
 	_card_peek_next.pressed.connect(func(): _cycle_card_peek(1))
+	# Real SVG chevrons instead of the U+2039/203A single guillemets that
+	# Godot's Noto Sans renders inconsistently.
+	_card_peek_prev.icon = load("res://assets/icons/chevron-left.svg")
+	_card_peek_next.icon = load("res://assets/icons/chevron-right.svg")
 	_card_peek_scrim.gui_input.connect(_on_card_peek_scrim_input)
 	_opponent_board.realm_chip_pressed.connect(_on_opp_chip_pressed)
 	_player_board.realm_chip_pressed.connect(_on_own_chip_pressed)

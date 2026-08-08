@@ -589,8 +589,8 @@ theme_override_constants/separation = 6
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
-text = "‹"
-theme_override_font_sizes/font_size = 22
+icon_alignment = 1
+expand_icon = true
 
 [node name="CardPeekBank" type="Button" parent="CardPeek/CardPeekMargin/CardPeekVBox/CardPeekActions"]
 unique_name_in_owner = true
@@ -620,8 +620,8 @@ theme_override_font_sizes/font_size = 12
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 40)
 layout_mode = 2
-text = "›"
-theme_override_font_sizes/font_size = 22
+icon_alignment = 1
+expand_icon = true
 
 [node name="ToMenuButton" type="Button" parent="."]
 unique_name_in_owner = true
