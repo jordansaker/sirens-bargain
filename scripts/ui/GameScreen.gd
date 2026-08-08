@@ -113,6 +113,8 @@ signal _remote_payment_decided
 @onready var _peek_row: HBoxContainer = %PeekRow
 @onready var _peek_close: Button = %PeekClose
 @onready var _peek_confirm: Button = %PeekConfirm
+@onready var _peek_prev: Button = %PeekPrev
+@onready var _peek_next: Button = %PeekNext
 @onready var _card_peek_scrim: ColorRect = %CardPeekScrim
 @onready var _card_peek: Panel = %CardPeek
 @onready var _card_peek_banner: Panel = %CardPeekBanner
@@ -350,6 +352,13 @@ func _wire_signals() -> void:
 		ai.human_refusal_hook = _prompt_human_refusal
 		ai.human_payment_hook = _prompt_human_payment
 	_peek_confirm.pressed.connect(_on_peek_confirm_pressed)
+	# Realm-peek cycle arrows: browse the peeked player's realms without
+	# reopening from a chip tap each time. Only visible in realm-peek mode
+	# (hidden by _show_bank_peek / _show_discard_peek / _open_pay_picker).
+	_peek_prev.icon = load("res://assets/icons/chevron-left.svg")
+	_peek_next.icon = load("res://assets/icons/chevron-right.svg")
+	_peek_prev.pressed.connect(func(): _cycle_realm_peek(-1))
+	_peek_next.pressed.connect(func(): _cycle_realm_peek(1))
 
 # --- Turn loop -----------------------------------------------------------
 
@@ -2577,6 +2586,8 @@ func _show_discard_peek() -> void:
 	_peek_close.text = "Close"
 	_peek_confirm.visible = false
 	_ctx.erase("pay_pending")
+	_peek_prev.visible = false
+	_peek_next.visible = false
 	_peek_root.visible = true
 
 func _show_bank_peek(player_id: int) -> void:
@@ -2608,6 +2619,8 @@ func _show_bank_peek(player_id: int) -> void:
 	_peek_close.text = "Close"
 	_peek_confirm.visible = false
 	_ctx.erase("pay_pending")
+	_peek_prev.visible = false
+	_peek_next.visible = false
 	_peek_root.visible = true
 
 func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Callable()) -> void:
@@ -2656,10 +2669,19 @@ func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Ca
 	# realm (opponent's modifiers stay in the subtitle line only) and only
 	# outside of picker mode (picker only cares about the realm stack).
 	_populate_peek_modifier_row(player, realm_name, pick_cb.is_valid())
-	# Picker mode = cancelling the swap; informational = just closing the peek.
-	_peek_close.text = "Cancel" if pick_cb.is_valid() else "Close"
+	# Always just "Close" — even in picker mode. Closing the peek returns
+	# to the chip-picking state so you can browse other realms without
+	# aborting the action. Real cancel is the "Cancel action" button in
+	# the actions row (which lives on the Play slot during targeting).
+	_peek_close.text = "Close"
 	_peek_confirm.visible = false
 	_ctx.erase("pay_pending")
+	# Prev/next only make sense for realm peeks — enable when the peeked
+	# player has more than one in-play realm to cycle through.
+	var cyclable := _peek_cyclable_realms(player)
+	var can_cycle := cyclable.size() > 1
+	_peek_prev.visible = can_cycle
+	_peek_next.visible = can_cycle
 	_peek_root.visible = true
 
 func _hide_peek() -> void:
@@ -2725,21 +2747,49 @@ func _populate_peek_modifier_row(player: PlayerState, realm_name: String, in_pic
 # the peek used to strand the player in a non-IDLE state — now it cancels the
 # whole action so they can pick a different card or bank instead. Payment mode
 # treats Close as "auto-pay" (fall back to smart selection).
+func _peek_cyclable_realms(player: PlayerState) -> Array[String]:
+	# In-play realms (any card laid). Skips empty realms so the cycle
+	# doesn't land on nothing.
+	var out: Array[String] = []
+	for r in player.realms.keys():
+		var stack: Array = player.realms[r]
+		if not stack.is_empty():
+			out.append(r)
+	return out
+
+func _cycle_realm_peek(delta: int) -> void:
+	# Cycle to the next/previous realm on the currently-peeked player.
+	# Keeps peek_pick_cb intact so Eel/Trade browsing survives the flip.
+	var player_id: int = int(_ctx.get("peek_player", -1))
+	var current_realm: String = String(_ctx.get("peek_realm", ""))
+	if player_id < 0 or current_realm.is_empty():
+		return
+	var player: PlayerState = _gs.players[player_id]
+	var cyclable := _peek_cyclable_realms(player)
+	if cyclable.size() < 2:
+		return
+	var idx := cyclable.find(current_realm)
+	if idx < 0:
+		idx = 0
+	var next_idx := (idx + delta) % cyclable.size()
+	if next_idx < 0:
+		next_idx += cyclable.size()
+	var next_realm: String = cyclable[next_idx]
+	var cb_var: Variant = _ctx.get("peek_pick_cb", Callable())
+	var cb: Callable = cb_var if cb_var is Callable else Callable()
+	_show_realm_peek(player_id, next_realm, cb)
+
 func _on_peek_close_pressed() -> void:
-	var was_action_picker: bool = _ctx.has("peek_pick_cb")
 	var was_pay_picker: bool = _ctx.has("pay_pending")
-	_ctx.erase("peek_pick_cb")
 	if was_pay_picker:
 		_ctx.erase("pay_pending")
 		_hide_peek()
 		_payment_answered.emit(null)
 		return
+	# For an action picker (Eel/Trade browsing), Close just hides the peek —
+	# the picker callback stays live so tapping another chip opens the next
+	# realm. Full cancel is the "Cancel action" button in the actions row.
 	_hide_peek()
-	if was_action_picker:
-		_state = InteractionState.IDLE
-		_ctx.clear()
-		_refresh_actions()
-		_prompt("Cancelled — pick a card or bank it.")
 
 func _stack_has_shiftable_wild(stack: Array, current_realm: String) -> bool:
 	for c in stack:
@@ -2969,6 +3019,8 @@ func _open_pay_picker(payer: PlayerState, receiver: PlayerState, amount: int) ->
 	# always reads "Auto" and falls back to smart_picks (bank first, then
 	# lowest-value realm cards) so a mis-tap still settles.
 	_peek_close.text = "Auto"
+	_peek_prev.visible = false
+	_peek_next.visible = false
 	_peek_root.visible = true
 	var answer: Variant = await _payment_answered
 	return answer
@@ -3289,6 +3341,27 @@ func _apply_mockup_styling() -> void:
 	_style_turn_block()
 	_style_draw_pile()
 	_style_prompt_label()
+	_style_action_menu()
+
+# Darken the popup ActionMenu so its text never fades into the gameplay
+# behind it. Godot's default Panel stylebox was near-transparent grey.
+func _style_action_menu() -> void:
+	if _menu_root == null:
+		return
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.024, 0.067, 0.122, 0.97)
+	sb.border_color = Color(CH_GOLD.r, CH_GOLD.g, CH_GOLD.b, 0.45)
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.corner_radius_top_left = 14
+	sb.corner_radius_top_right = 14
+	sb.corner_radius_bottom_left = 14
+	sb.corner_radius_bottom_right = 14
+	sb.shadow_color = Color(0, 0, 0, 0.55)
+	sb.shadow_size = 12
+	_menu_root.add_theme_stylebox_override("panel", sb)
 
 func _style_background() -> void:
 	# Overlay a radial-gradient TextureRect on top of the existing solid

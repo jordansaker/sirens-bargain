@@ -438,6 +438,13 @@ theme_override_constants/separation = 6
 layout_mode = 2
 theme_override_constants/separation = 8
 
+[node name="PeekPrev" type="Button" parent="RealmPeek/PeekMargin/PeekVBox/PeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+icon_alignment = 1
+expand_icon = true
+
 [node name="PeekConfirm" type="Button" parent="RealmPeek/PeekMargin/PeekVBox/PeekActions"]
 unique_name_in_owner = true
 visible = false
@@ -454,6 +461,13 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Close"
 theme_override_font_sizes/font_size = 14
+
+[node name="PeekNext" type="Button" parent="RealmPeek/PeekMargin/PeekVBox/PeekActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+icon_alignment = 1
+expand_icon = true
 
 [node name="CardPeekScrim" type="ColorRect" parent="."]
 unique_name_in_owner = true
