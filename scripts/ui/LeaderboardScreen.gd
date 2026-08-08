@@ -307,16 +307,28 @@ func _build_vp(player: Dictionary, is_leader: bool) -> VBoxContainer:
 	col.add_theme_constant_override("separation", 6)
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	# "Leading" tag — small star + label. Godot's default font (Noto Sans)
-	# includes ★ (U+2605) but not the earlier queen glyph (♛), which drew
-	# as tofu.
-	var crown := Label.new()
-	crown.text = "★ leading" if is_leader else ""
-	crown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	crown.add_theme_font_size_override("font_size", 12)
-	crown.add_theme_color_override("font_color", LB_GOLD_LT)
-	crown.custom_minimum_size = Vector2(0, 16)
-	col.add_child(crown)
+	# "Leading" tag — imported SVG crown + label. Using a real SVG asset so
+	# the icon renders on every platform (the mockup's ♛ glyph isn't in
+	# Godot's bundled Noto Sans and drew as tofu).
+	var crown_row := HBoxContainer.new()
+	crown_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	crown_row.add_theme_constant_override("separation", 5)
+	crown_row.custom_minimum_size = Vector2(0, 16)
+	col.add_child(crown_row)
+	if is_leader:
+		var icon := TextureRect.new()
+		icon.custom_minimum_size = Vector2(14, 14)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.texture = load("res://assets/icons/crown.svg")
+		crown_row.add_child(icon)
+		var lead_lbl := Label.new()
+		lead_lbl.text = "leading"
+		lead_lbl.add_theme_font_size_override("font_size", 12)
+		lead_lbl.add_theme_color_override("font_color", LB_GOLD_LT)
+		crown_row.add_child(lead_lbl)
 
 	var avatar := Label.new()
 	avatar.text = String(player["name"]).substr(0, 1).to_upper()
