@@ -22,48 +22,16 @@ const PEARL := Color("EDE6D4")
 const PEARL_LT := Color("FBF7EC")
 const HAZE := Color("9DB6C4")
 
-const EMBLEM_SVG := """<svg viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
-<defs>
-<linearGradient id='sh' x1='0' y1='0' x2='0' y2='1'>
-<stop offset='0' stop-color='#E4C25A'/><stop offset='1' stop-color='#A5811C'/>
-</linearGradient>
-<radialGradient id='pl' cx='0.4' cy='0.35' r='0.7'>
-<stop offset='0' stop-color='#FBF7EC'/><stop offset='1' stop-color='#CFC6AE'/>
-</radialGradient>
-</defs>
-<path d='M32 50 L13 27 A24 24 0 0 1 51 27 Z' fill='url(#sh)' stroke='#A5811C' stroke-width='1'/>
-<g stroke='#0B1D33' stroke-width='1.6' stroke-linecap='round'>
-<line x1='32' y1='50' x2='13' y2='27'/><line x1='32' y1='50' x2='20' y2='19.5'/>
-<line x1='32' y1='50' x2='26' y2='16'/><line x1='32' y1='50' x2='32' y2='15'/>
-<line x1='32' y1='50' x2='38' y2='16'/><line x1='32' y1='50' x2='44' y2='19.5'/>
-<line x1='32' y1='50' x2='51' y2='27'/>
-</g>
-<path d='M13 27 Q17 31 21 27 Q25 31 29 27 Q32 30.5 35 27 Q39 31 43 27 Q47 31 51 27' fill='none' stroke='#A5811C' stroke-width='1.2'/>
-<circle cx='32' cy='50' r='6.2' fill='url(#pl)' stroke='#A5811C' stroke-width='0.8'/>
-<circle cx='29.6' cy='47.8' r='1.7' fill='#FBF7EC'/>
-</svg>"""
-
-const ICON_HVH := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<circle cx='8' cy='8' r='3'/><circle cx='16' cy='8' r='3'/>
-<path d='M2.5 20a5.5 5.5 0 0 1 11 0M13 20a5.5 5.5 0 0 1 8.5-4.6'/></svg>"""
-
-const ICON_AI := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<circle cx='10' cy='9' r='3'/><path d='M3.5 20a6.5 6.5 0 0 1 13 0'/>
-<path d='M18 3.5l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z'/></svg>"""
-
-const ICON_RULES := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<path d='M4 5h10a2 2 0 0 1 2 2v12'/><path d='M4 5v13a2 2 0 0 0 2 2h10'/>
-<path d='M8 9h5M8 13h5'/></svg>"""
-
-const ICON_SETTINGS := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<circle cx='12' cy='12' r='3'/>
-<path d='M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.4-2.5H9.6l-.4 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4L5.1 11a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.4 2.5h4.8l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6a7 7 0 0 0 .1-1z'/></svg>"""
-
-const ICON_SOUND_ON := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<path d='M4 9v6h4l5 4V5L8 9H4z'/><path d='M16 8.5a5 5 0 0 1 0 7'/></svg>"""
-
-const ICON_SOUND_OFF := """<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%s' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'>
-<path d='M4 9v6h4l5 4V5L8 9H4z'/><line x1='16' y1='9' x2='22' y2='15'/><line x1='22' y1='9' x2='16' y2='15'/></svg>"""
+# Menu icon paths — each shipped as a real SVG asset in assets/icons/ so
+# Godot's SVG importer handles them rather than the runtime rasterizer
+# that swallowed some paths on the web build. Strokes are white so the
+# TextureRect's `modulate` colour tints them per button variant.
+const ICON_HVH := "res://assets/icons/menu-hvh.svg"
+const ICON_AI := "res://assets/icons/menu-ai.svg"
+const ICON_RULES := "res://assets/icons/menu-rules.svg"
+const ICON_SETTINGS := "res://assets/icons/menu-leaderboard.svg"
+const ICON_SOUND_ON := "res://assets/icons/menu-sound-on.svg"
+const ICON_SOUND_OFF := "res://assets/icons/menu-sound-off.svg"
 
 var _sound_on: bool = true
 var _sound_btn: Button = null
@@ -358,9 +326,10 @@ func _make_menu_button(title_text: String, subtitle_text: String, icon_svg: Stri
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# `%s` gets a hex string without the '#' prefix — SVG needs one, otherwise
-	# the stroke attribute is invalid and the icon renders blank.
-	icon.texture = _svg_to_texture(icon_svg % ("#" + text_color.to_html(false)), 44)
+	# icon_svg is a res:// path to a white-stroked SVG asset — set modulate
+	# so the button-variant text colour tints the strokes.
+	icon.texture = load(icon_svg)
+	icon.modulate = text_color
 	row.add_child(icon)
 
 	var text_col := VBoxContainer.new()
@@ -512,7 +481,8 @@ func _refresh_sound_icon() -> void:
 	if _sound_icon == null:
 		return
 	var svg := ICON_SOUND_ON if _sound_on else ICON_SOUND_OFF
-	_sound_icon.texture = _svg_to_texture(svg % PEARL.to_html(false), 44)
+	_sound_icon.texture = load(svg)
+	_sound_icon.modulate = PEARL
 
 func _on_sound_toggled() -> void:
 	_sound_on = not _sound_on
@@ -568,17 +538,6 @@ func _reset_net_session() -> void:
 	var ns := get_tree().root.get_node_or_null("NetSession")
 	if ns != null and ns.has_method("reset"):
 		ns.reset()
-
-# `Image.load_svg_from_string` scales the source SVG uniformly. Rasterising at
-# 2× the display size gives crisp icons/emblem on Retina without shipping
-# separate 1×/2× PNGs.
-static func _svg_to_texture(svg: String, size_px: int) -> Texture2D:
-	var img := Image.new()
-	var scale := float(size_px) / 24.0
-	var err := img.load_svg_from_string(svg, scale)
-	if err != OK:
-		return null
-	return ImageTexture.create_from_image(img)
 
 static func _reduced_motion() -> bool:
 	# Best-effort — Godot has no cross-platform prefers-reduced-motion API.
