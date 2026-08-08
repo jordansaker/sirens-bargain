@@ -959,6 +959,14 @@ func _post_match_summary() -> void:
 	var winner_id := _gs.winner()
 	if winner_id < 0:
 		return
+	# Only real HvH matches with named humans get recorded — vs-AI would
+	# pollute the API with "You" vs "Coral" rows the leaderboard filters
+	# out anyway. And in HvH, only the host (peer 0) posts so we don't
+	# get a duplicate row from the guest applying the same game-over.
+	if not _is_online:
+		return
+	if HUMAN_ID != 0:
+		return
 	var players_payload: Array = []
 	for p in _gs.players:
 		var stats: Dictionary = _match_stats.get(p.id, {})
