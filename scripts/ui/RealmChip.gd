@@ -26,7 +26,9 @@ var _bar: Panel        # coloured header with the realm name overlaid
 var _bar_label: Label
 var _count: Label
 var _col: VBoxContainer
-var _modifier_badge: Label
+var _modifier_row: HBoxContainer
+var _cottage_icon: TextureRect
+var _palace_icon: TextureRect
 var _pop_tween: Tween = null
 var _popped: bool = false
 
@@ -63,17 +65,37 @@ func _ready() -> void:
 	_bar_label.add_theme_font_size_override("font_size", 9)
 	_bar.add_child(_bar_label)
 
-	# Modifier badge — sits at the right edge of the coloured header and
-	# renders "⌂" for Coral Cottage, "♛" for Pearl Palace (both if attached).
-	_modifier_badge = Label.new()
-	_modifier_badge.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_modifier_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_modifier_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_modifier_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_modifier_badge.add_theme_font_size_override("font_size", 10)
-	_modifier_badge.offset_left = -22
-	_modifier_badge.offset_right = -3
-	_bar.add_child(_modifier_badge)
+	# Modifier badges — two small SVG icons anchored to the right edge of
+	# the coloured header. The Unicode glyph substitutes (⌂ / ♛) didn't
+	# ship in Godot's bundled Noto Sans and drew as tofu, so we render
+	# real assets/icons/cottage.svg + palace.svg via TextureRect. Visibility
+	# is toggled from _paint_bar based on has_cottage / has_palace.
+	_modifier_row = HBoxContainer.new()
+	_modifier_row.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	_modifier_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_modifier_row.add_theme_constant_override("separation", 2)
+	_modifier_row.offset_left = -32
+	_modifier_row.offset_right = -3
+	_modifier_row.alignment = BoxContainer.ALIGNMENT_END
+	_bar.add_child(_modifier_row)
+	_cottage_icon = TextureRect.new()
+	_cottage_icon.custom_minimum_size = Vector2(14, 14)
+	_cottage_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_cottage_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_cottage_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cottage_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cottage_icon.texture = load("res://assets/icons/cottage.svg")
+	_cottage_icon.visible = false
+	_modifier_row.add_child(_cottage_icon)
+	_palace_icon = TextureRect.new()
+	_palace_icon.custom_minimum_size = Vector2(14, 14)
+	_palace_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_palace_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_palace_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_palace_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_palace_icon.texture = load("res://assets/icons/palace.svg")
+	_palace_icon.visible = false
+	_modifier_row.add_child(_palace_icon)
 
 	_count = Label.new()
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -167,16 +189,10 @@ func _paint_bar(name_: String, complete: bool) -> void:
 	bar_sb.corner_radius_bottom_right = 0
 	_bar.add_theme_stylebox_override("panel", bar_sb)
 	_bar_label.text = name_
-	var on_bar := CardColors.text_on(bg)
-	_bar_label.add_theme_color_override("font_color", on_bar)
-	# Modifier glyphs: ⌂ for Coral Cottage, ♛ for Pearl Palace. Both if
-	# stacked. Absent when the realm has neither attached.
-	if _modifier_badge != null:
-		var glyphs := ""
-		if has_cottage:
-			glyphs += "⌂"
-		if has_palace:
-			glyphs += "♛"
-		_modifier_badge.text = glyphs
-		_modifier_badge.add_theme_color_override("font_color", on_bar)
-		_modifier_badge.visible = not glyphs.is_empty()
+	_bar_label.add_theme_color_override("font_color", CardColors.text_on(bg))
+	# Modifier icons: real SVG cottage / palace glyphs from assets/icons.
+	# Visibility flipped per has_cottage / has_palace on this refresh.
+	if _cottage_icon != null:
+		_cottage_icon.visible = has_cottage
+	if _palace_icon != null:
+		_palace_icon.visible = has_palace
