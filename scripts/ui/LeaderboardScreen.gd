@@ -225,7 +225,7 @@ func _compute_totals() -> Dictionary:
 		names.append(String(p["name"]))
 	var per: Dictionary = {}
 	for n in names:
-		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0, "win_rate": 0, "best_streak": 0}
+		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "win_rate": 0, "best_streak": 0}
 	# Keep only matches where BOTH participants are in the leaderboard's
 	# roster AND the recorded winner is one of them. The API accumulates
 	# every posted match; the leaderboard is a filtered head-to-head view.
@@ -263,6 +263,11 @@ func _compute_totals() -> Dictionary:
 			per[pname]["realms"] += int(pp.get("realms", 0))
 			per[pname]["steals"] += int(pp.get("steals", 0))
 			per[pname]["tributes"] += int(pp.get("tributes", 0))
+			# highest_rent aggregates as a MAX across matches — it's the
+			# single biggest rent that player has ever collected.
+			var hr := int(pp.get("highestRent", 0))
+			if hr > int(per[pname]["highest_rent"]):
+				per[pname]["highest_rent"] = hr
 	for n in names:
 		per[n]["win_rate"] = int(round(float(per[n]["wins"]) / float(games) * 100.0)) if games > 0 else 0
 	# Best streak per player from chronological match list (oldest → newest).
@@ -415,6 +420,7 @@ func _build_compare_panel(totals: Dictionary) -> PanelContainer:
 		["REALMS", "realms", ""],
 		["STEALS", "steals", ""],
 		["TRIBUTES", "tributes", ""],
+		["HIGH RENT", "highest_rent", ""],
 		["BEST STREAK", "best_streak", ""],
 	]
 	for i in range(rows.size()):

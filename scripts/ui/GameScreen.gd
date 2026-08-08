@@ -1470,26 +1470,33 @@ func _flash_turn_banner(text: String) -> void:
 		_sfx.play("turn_change")
 
 # Bigger, poppier variant of the turn banner for action-card plays. Scales up
-# with an elastic pop and fades out — deliberately more attention-grabbing so
-# players can't miss that an action landed.
+# with an elastic pop, holds long enough to read, then slow-fades out —
+# deliberately more attention-grabbing so players can't miss that an action
+# landed. Total on-screen time ~3 seconds with a 1-second fade tail.
 func _flash_action_banner(action_name: String) -> void:
 	if _turn_banner == null:
 		return
 	_turn_banner.text = action_name
-	_turn_banner.add_theme_font_size_override("font_size", 46)
+	_turn_banner.add_theme_font_size_override("font_size", 52)
 	_turn_banner.modulate.a = 0.0
+	# Pivot from the label's own centre so the elastic scale-pop grows
+	# from the middle instead of drifting toward the top-left.
 	_turn_banner.pivot_offset = _turn_banner.size * 0.5
 	_turn_banner.scale = Vector2(0.55, 0.55)
 	var tw := create_tween()
 	tw.set_parallel(true)
-	tw.tween_property(_turn_banner, "modulate:a", 1.0, 0.18)
-	tw.tween_property(_turn_banner, "scale", Vector2.ONE, 0.42) \
+	tw.tween_property(_turn_banner, "modulate:a", 1.0, 0.22)
+	tw.tween_property(_turn_banner, "scale", Vector2.ONE, 0.55) \
 		.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	tw.set_parallel(false)
-	tw.tween_interval(0.75)
+	# Hold at full opacity long enough to read (total ~3s including fade).
+	tw.tween_interval(1.45)
+	# Slow 1-second fade — deliberately gentle so it dissolves rather than
+	# snapping away. Very slight scale drift adds a "floating away" feel.
 	tw.set_parallel(true)
-	tw.tween_property(_turn_banner, "modulate:a", 0.0, 0.35)
-	tw.tween_property(_turn_banner, "scale", Vector2(1.08, 1.08), 0.35)
+	tw.tween_property(_turn_banner, "modulate:a", 0.0, 1.0) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(_turn_banner, "scale", Vector2(1.05, 1.05), 1.0)
 	if _sfx != null:
 		_sfx.play("action")
 

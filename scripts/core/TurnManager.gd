@@ -367,12 +367,16 @@ func initiate_tribute(
 	)
 	game_state.pending_action = pending
 	var ht_note := " (High Tide)" if high_tide_card != null else ""
+	# Use the card's actual name so the UI can flash "Deep Tribute!" /
+	# "Bloom Tribute!" instead of a generic "TRIBUTE!" banner. The stats
+	# tracker matches on the resolve-phase log line, not this one, so
+	# renaming is safe.
 	if is_sirens_toll:
 		play_logged.emit(charger.id,
-			"played Siren's Toll on P%d%s" % [payers[0], ht_note])
+			"played %s on P%d%s" % [tribute_card.name, payers[0], ht_note])
 	else:
 		play_logged.emit(charger.id,
-			"played Tribute on their %s%s" % [charger_realm, ht_note])
+			"played %s on their %s%s" % [tribute_card.name, charger_realm, ht_note])
 	return pending
 
 func charge_tribute(

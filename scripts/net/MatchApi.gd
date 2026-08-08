@@ -12,6 +12,8 @@ extends RefCounted
 #                       "tributes": int, "highestRent": int } ] }
 #   `highestRent` is the single largest rent payment that player received
 #   during the match (max of a single settlement total, not the sum).
+#   The GET returns the same schema per match; the leaderboard aggregates
+#   `highestRent` as a MAX across matches (biggest-ever rent per player).
 
 const BASE_URL := "https://hq.jordansakerdev.com/api/sirens-bargain"
 # Shared key — this ships in the web build, so it's not a secret in the
