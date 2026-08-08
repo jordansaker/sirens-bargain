@@ -99,13 +99,18 @@ func _ready() -> void:
 	_palace_icon.visible = false
 	_modifier_row.add_child(_palace_icon)
 
-	# Rainbow Conch marker — pinned to the LEFT edge of the header so the
-	# realm name still centres between it and the cottage/palace icons on
-	# the right. Multi-colour SVG, so no modulate override.
+	# Count row: rainbow-conch marker sits inline next to the "N/M" progress
+	# label so a Rainbow Conch is legible without stealing space from the
+	# coloured header (where cottage/palace already live). Multi-colour SVG,
+	# so no modulate override; visibility flipped in _paint_bar.
+	var count_row := HBoxContainer.new()
+	count_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	count_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	count_row.add_theme_constant_override("separation", 3)
+	count_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_col.add_child(count_row)
+
 	_conch_icon = TextureRect.new()
-	_conch_icon.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	_conch_icon.offset_left = 3
-	_conch_icon.offset_right = 17
 	_conch_icon.custom_minimum_size = Vector2(14, 14)
 	_conch_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_conch_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -113,15 +118,15 @@ func _ready() -> void:
 	_conch_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_conch_icon.texture = load("res://assets/icons/rainbow-conch.svg")
 	_conch_icon.visible = false
-	_bar.add_child(_conch_icon)
+	count_row.add_child(_conch_icon)
 
 	_count = Label.new()
 	_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_count.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_count.add_theme_font_size_override("font_size", 12)
-	_count.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_count.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_col.add_child(_count)
+	count_row.add_child(_count)
 
 	_refresh()
 
