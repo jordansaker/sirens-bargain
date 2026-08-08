@@ -20,49 +20,31 @@ const LB_HAZE := Color("9DB6C4")
 const LB_MIST := Color("C4D6E2")
 const LB_PANEL_BG := Color(0.043, 0.114, 0.2, 0.72)
 
-# Hardcoded fixture — swap for a real persistence layer later.
+# Hardcoded head-to-head roster. Matches are fetched live from the API and
+# filtered so we only score games where BOTH players are in this list.
 const PLAYERS := [
-	{"name": "Mia", "color": Color("6E5AA8")},
-	{"name": "Finn", "color": Color("7FA8E8")},
+	{"name": "Tamara", "color": Color("E88A9A")},
+	{"name": "Jordan", "color": Color("7FA8E8")},
 ]
-const MATCHES := [
-	{"ended_at": "2026-08-06", "turns": 24, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 2, "tributes": 5},
-	           "Finn": {"realms": 1, "steals": 1, "tributes": 3}}},
-	{"ended_at": "2026-08-05", "turns": 31, "winner": "Finn",
-	 "stats": {"Mia": {"realms": 2, "steals": 1, "tributes": 2},
-	           "Finn": {"realms": 3, "steals": 2, "tributes": 4}}},
-	{"ended_at": "2026-08-05", "turns": 19, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 3, "tributes": 3},
-	           "Finn": {"realms": 1, "steals": 0, "tributes": 2}}},
-	{"ended_at": "2026-08-03", "turns": 22, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 1, "tributes": 4},
-	           "Finn": {"realms": 2, "steals": 2, "tributes": 3}}},
-	{"ended_at": "2026-08-02", "turns": 28, "winner": "Finn",
-	 "stats": {"Mia": {"realms": 1, "steals": 1, "tributes": 3},
-	           "Finn": {"realms": 3, "steals": 1, "tributes": 5}}},
-	{"ended_at": "2026-08-01", "turns": 20, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 2, "tributes": 2},
-	           "Finn": {"realms": 0, "steals": 1, "tributes": 2}}},
-	{"ended_at": "2026-07-30", "turns": 26, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 2, "tributes": 4},
-	           "Finn": {"realms": 2, "steals": 2, "tributes": 3}}},
-	{"ended_at": "2026-07-28", "turns": 18, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 1, "tributes": 3},
-	           "Finn": {"realms": 1, "steals": 1, "tributes": 2}}},
-	{"ended_at": "2026-07-27", "turns": 30, "winner": "Finn",
-	 "stats": {"Mia": {"realms": 1, "steals": 0, "tributes": 2},
-	           "Finn": {"realms": 3, "steals": 2, "tributes": 4}}},
-	{"ended_at": "2026-07-25", "turns": 23, "winner": "Mia",
-	 "stats": {"Mia": {"realms": 3, "steals": 1, "tributes": 3},
-	           "Finn": {"realms": 2, "steals": 0, "tributes": 2}}},
-]
+
+# Populated from MatchApi.fetch_matches on _ready. Each entry mirrors the
+# API's per-match shape:
+#   {endedAt, turns, winner, players: [{name, realms, steals, tributes}]}
+var _matches: Array = []
+var _loading: bool = true
+var _content_body: VBoxContainer = null
 
 func _ready() -> void:
 	_add_background()
 	_add_rays()
 	_add_topbar()
 	_add_content()
+	MatchApi.fetch_matches(self, _on_matches_fetched)
+
+func _on_matches_fetched(matches: Array) -> void:
+	_matches = matches
+	_loading = false
+	_rebuild_body()
 
 # --- Background --------------------------------------------------------
 
@@ -197,22 +179,42 @@ func _add_content() -> void:
 	pad.add_theme_constant_override("margin_bottom", 40)
 	col.add_child(pad)
 
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 14)
-	pad.add_child(body)
+	_content_body = VBoxContainer.new()
+	_content_body.add_theme_constant_override("separation", 14)
+	pad.add_child(_content_body)
+	_rebuild_body()
 
+func _rebuild_body() -> void:
+	if _content_body == null:
+		return
+	for child in _content_body.get_children():
+		child.queue_free()
+	if _loading:
+		_content_body.add_child(_build_placeholder("Fetching matches…"))
+		return
 	var totals := _compute_totals()
-	body.add_child(_build_versus_header(totals))
-	body.add_child(_build_compare_panel(totals))
-	body.add_child(_build_section_label("Recent matches"))
-	body.add_child(_build_recent_matches(totals["recent"]))
-
+	_content_body.add_child(_build_versus_header(totals))
+	_content_body.add_child(_build_compare_panel(totals))
+	_content_body.add_child(_build_section_label("Recent matches"))
+	if int(totals["games"]) == 0:
+		_content_body.add_child(_build_placeholder("No head-to-head matches yet."))
+	else:
+		_content_body.add_child(_build_recent_matches(totals["recent"]))
 	var foot := Label.new()
 	foot.text = "Tallied from %d stored matches" % int(totals["games"])
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	foot.add_theme_font_size_override("font_size", 11)
 	foot.add_theme_color_override("font_color", Color(LB_HAZE.r, LB_HAZE.g, LB_HAZE.b, 0.6))
-	body.add_child(foot)
+	_content_body.add_child(foot)
+
+func _build_placeholder(text: String) -> Label:
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", LB_HAZE)
+	lbl.custom_minimum_size = Vector2(0, 80)
+	return lbl
 
 # --- Totals ------------------------------------------------------------
 
@@ -223,22 +225,48 @@ func _compute_totals() -> Dictionary:
 	var per: Dictionary = {}
 	for n in names:
 		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0, "win_rate": 0, "best_streak": 0}
-	var games := 0
-	for m in MATCHES:
-		games += 1
+	# Keep only matches where BOTH participants are in the leaderboard's
+	# roster AND the recorded winner is one of them. The API accumulates
+	# every posted match; the leaderboard is a filtered head-to-head view.
+	var valid: Array = []
+	for m in _matches:
+		if not (m is Dictionary):
+			continue
+		var players_arr = m.get("players", [])
+		if not (players_arr is Array):
+			continue
+		var seen: Array[String] = []
+		var ok := true
+		for pp in players_arr:
+			if not (pp is Dictionary):
+				ok = false
+				break
+			var pname := String(pp.get("name", ""))
+			if not names.has(pname):
+				ok = false
+				break
+			seen.append(pname)
+		if not ok or seen.size() != names.size():
+			continue
+		if not names.has(String(m.get("winner", ""))):
+			continue
+		valid.append(m)
+	var games := valid.size()
+	for m in valid:
 		var w := String(m["winner"])
 		per[w]["wins"] += 1
-		var per_stats: Dictionary = m["stats"]
-		for n in names:
-			var s: Dictionary = per_stats.get(n, {})
-			per[n]["realms"] += int(s.get("realms", 0))
-			per[n]["steals"] += int(s.get("steals", 0))
-			per[n]["tributes"] += int(s.get("tributes", 0))
+		for pp in m["players"]:
+			var pname := String(pp.get("name", ""))
+			if not per.has(pname):
+				continue
+			per[pname]["realms"] += int(pp.get("realms", 0))
+			per[pname]["steals"] += int(pp.get("steals", 0))
+			per[pname]["tributes"] += int(pp.get("tributes", 0))
 	for n in names:
 		per[n]["win_rate"] = int(round(float(per[n]["wins"]) / float(games) * 100.0)) if games > 0 else 0
-	# Best streak per player from chronological match list.
-	var asc := MATCHES.duplicate()
-	asc.sort_custom(func(a, b): return String(a["ended_at"]) < String(b["ended_at"]))
+	# Best streak per player from chronological match list (oldest → newest).
+	var asc := valid.duplicate()
+	asc.sort_custom(func(a, b): return String(a.get("endedAt", "")) < String(b.get("endedAt", "")))
 	for n in names:
 		var best := 0
 		var run := 0
@@ -249,8 +277,8 @@ func _compute_totals() -> Dictionary:
 			else:
 				run = 0
 		per[n]["best_streak"] = best
-	var recent := MATCHES.duplicate()
-	recent.sort_custom(func(a, b): return String(a["ended_at"]) > String(b["ended_at"]))
+	var recent := valid.duplicate()
+	recent.sort_custom(func(a, b): return String(a.get("endedAt", "")) > String(b.get("endedAt", "")))
 	if recent.size() > 4:
 		recent.resize(4)
 	return {"games": games, "per": per, "recent": recent}
@@ -279,8 +307,11 @@ func _build_vp(player: Dictionary, is_leader: bool) -> VBoxContainer:
 	col.add_theme_constant_override("separation", 6)
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
+	# "Leading" tag — small star + label. Godot's default font (Noto Sans)
+	# includes ★ (U+2605) but not the earlier queen glyph (♛), which drew
+	# as tofu.
 	var crown := Label.new()
-	crown.text = "♛ leading" if is_leader else ""
+	crown.text = "★ leading" if is_leader else ""
 	crown.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	crown.add_theme_font_size_override("font_size", 12)
 	crown.add_theme_color_override("font_color", LB_GOLD_LT)
@@ -485,7 +516,7 @@ func _build_recent_matches(matches: Array) -> PanelContainer:
 		row.add_child(winner_lbl)
 
 		var meta := Label.new()
-		meta.text = "%d turns · %s" % [int(m["turns"]), String(m["ended_at"])]
+		meta.text = "%d turns · %s" % [int(m.get("turns", 0)), _short_date(String(m.get("endedAt", "")))]
 		meta.add_theme_font_size_override("font_size", 12)
 		meta.add_theme_color_override("font_color", LB_HAZE)
 		row.add_child(meta)
@@ -496,6 +527,19 @@ func _build_recent_matches(matches: Array) -> PanelContainer:
 			sep.color = Color(1, 1, 1, 0.06)
 			col.add_child(sep)
 	return panel
+
+func _short_date(iso: String) -> String:
+	# ISO-8601 UTC like "2026-08-06T22:40:11Z" → "Aug 6" for display.
+	if iso.length() < 10:
+		return iso
+	var year := int(iso.substr(0, 4))
+	var month := int(iso.substr(5, 2))
+	var day := int(iso.substr(8, 2))
+	var months := ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	if month < 1 or month > 12:
+		return iso
+	var _year_unused := year
+	return "%s %d" % [months[month], day]
 
 func _color_for(player_name: String) -> Color:
 	for p in PLAYERS:

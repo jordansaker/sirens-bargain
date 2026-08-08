@@ -698,6 +698,9 @@ func _run_ai_turns() -> void:
 
 func _show_game_over() -> void:
 	_state = InteractionState.GAME_OVER
+	# POST to the match-history API before we rebuild the summary UI so
+	# stats reflect the moment the winning play landed.
+	_post_match_summary()
 	# Widen + tall enough for two player cards + button rows. Uses fixed
 	# offset (anchored centre) so it works on any viewport size.
 	_game_over_panel.offset_left = -230
@@ -740,7 +743,7 @@ func _build_game_over_content(vbox: VBoxContainer) -> void:
 	vlabel.add_theme_color_override("font_color", CardColors.GOLD)
 	vbox.add_child(vlabel)
 
-	var winner_name := HUMAN_NAME if winner_id == HUMAN_ID else OPPONENT_NAME
+	var winner_name := _display_name_for(winner_id)
 	var vwinner := Label.new()
 	vwinner.text = "%s WINS!" % winner_name.to_upper()
 	vwinner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -834,7 +837,7 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 	head.add_theme_constant_override("separation", 10)
 	col.add_child(head)
 
-	var name_text := HUMAN_NAME if player.id == HUMAN_ID else OPPONENT_NAME
+	var name_text := _display_name_for(player.id)
 	var avatar := Label.new()
 	avatar.text = name_text.substr(0, 1).to_upper()
 	avatar.custom_minimum_size = Vector2(34, 34)
@@ -935,6 +938,43 @@ func _format_match_time() -> String:
 func _on_leaderboard_pressed() -> void:
 	_reset_net_session()
 	get_tree().change_scene_to_file("res://scenes/LeaderboardScreen.tscn")
+
+# Returns the display name we want to record for a player id. In HvH, the
+# local human is the profile name entered in the lobby (NetSession stores
+# it); the opponent is OPPONENT_NAME (also from NetSession). In vs-AI mode
+# HUMAN falls back to "You" and OPPONENT_NAME defaults to "Coral".
+func _display_name_for(player_id: int) -> String:
+	if player_id == HUMAN_ID:
+		var ns := get_tree().root.get_node_or_null("NetSession")
+		if ns != null and "local_name" in ns:
+			var nm := String(ns.local_name)
+			if not nm.strip_edges().is_empty():
+				return nm
+		return HUMAN_NAME
+	return OPPONENT_NAME
+
+func _post_match_summary() -> void:
+	if _gs == null:
+		return
+	var winner_id := _gs.winner()
+	if winner_id < 0:
+		return
+	var players_payload: Array = []
+	for p in _gs.players:
+		var stats: Dictionary = _match_stats.get(p.id, {})
+		players_payload.append({
+			"name": _display_name_for(p.id),
+			"realms": p.completed_realm_count(),
+			"steals": int(stats.get("steals", 0)),
+			"tributes": int(stats.get("tributes", 0)),
+		})
+	var payload := {
+		"endedAt": MatchApi.iso_utc_now(),
+		"turns": _turns_played,
+		"winner": _display_name_for(winner_id),
+		"players": players_payload,
+	}
+	MatchApi.post_match(self, payload)
 
 func _reset_net_session() -> void:
 	var ns := get_tree().root.get_node_or_null("NetSession")
