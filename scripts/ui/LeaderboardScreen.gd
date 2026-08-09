@@ -27,10 +27,11 @@ const PLAYERS := [
 	{"name": "Jordan", "color": Color("7FA8E8")},
 ]
 
-# Populated from MatchApi.fetch_matches on _ready. Each entry mirrors the
-# API's per-match shape:
-#   {endedAt, turns, winner, players: [{name, realms, steals, tributes}]}
-var _matches: Array = []
+# Populated from MatchApi.fetch_leaderboard on _ready. Each entry is a
+# server-side per-player aggregate:
+#   {name, wins, losses, matches, winRate, totalRealms, totalSteals,
+#    totalTributes, highestRent, lastMatchAt}
+var _entries: Array = []
 var _loading: bool = true
 var _content_body: VBoxContainer = null
 
@@ -39,10 +40,10 @@ func _ready() -> void:
 	_add_rays()
 	_add_topbar()
 	_add_content()
-	MatchApi.fetch_matches(self, _on_matches_fetched)
+	MatchApi.fetch_leaderboard(self, _on_leaderboard_fetched)
 
-func _on_matches_fetched(matches: Array) -> void:
-	_matches = matches
+func _on_leaderboard_fetched(entries: Array) -> void:
+	_entries = entries
 	_loading = false
 	_rebuild_body()
 
@@ -196,11 +197,8 @@ func _rebuild_body() -> void:
 	var totals := _compute_totals()
 	_content_body.add_child(_build_versus_header(totals))
 	_content_body.add_child(_build_compare_panel(totals))
-	_content_body.add_child(_build_section_label("Recent matches"))
 	if int(totals["games"]) == 0:
 		_content_body.add_child(_build_placeholder("No head-to-head matches yet."))
-	else:
-		_content_body.add_child(_build_recent_matches(totals["recent"]))
 	var foot := Label.new()
 	foot.text = "Tallied from %d stored matches" % int(totals["games"])
 	foot.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -220,74 +218,46 @@ func _build_placeholder(text: String) -> Label:
 # --- Totals ------------------------------------------------------------
 
 func _compute_totals() -> Dictionary:
+	# The server /leaderboard endpoint returns pre-aggregated per-player
+	# entries. We map them into the same per-player dict shape the UI already
+	# expects, filtering to just the roster (leaderboard is a head-to-head
+	# view of two named players — the API stores everyone). Server names are
+	# case-insensitive but return the most recent casing, so match case-fold.
 	var names: Array[String] = []
 	for p in PLAYERS:
 		names.append(String(p["name"]))
 	var per: Dictionary = {}
 	for n in names:
-		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "win_rate": 0, "best_streak": 0}
-	# Keep only matches where BOTH participants are in the leaderboard's
-	# roster AND the recorded winner is one of them. The API accumulates
-	# every posted match; the leaderboard is a filtered head-to-head view.
-	var valid: Array = []
-	for m in _matches:
-		if not (m is Dictionary):
+		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0,
+			"highest_rent": 0, "win_rate": 0, "matches": 0}
+	for e in _entries:
+		if not (e is Dictionary):
 			continue
-		var players_arr = m.get("players", [])
-		if not (players_arr is Array):
-			continue
-		var seen: Array[String] = []
-		var ok := true
-		for pp in players_arr:
-			if not (pp is Dictionary):
-				ok = false
+		var ename := String(e.get("name", ""))
+		var display_name := ""
+		for n in names:
+			if n.to_lower() == ename.to_lower():
+				display_name = n
 				break
-			var pname := String(pp.get("name", ""))
-			if not names.has(pname):
-				ok = false
-				break
-			seen.append(pname)
-		if not ok or seen.size() != names.size():
+		if display_name == "":
 			continue
-		if not names.has(String(m.get("winner", ""))):
-			continue
-		valid.append(m)
-	var games := valid.size()
-	for m in valid:
-		var w := String(m["winner"])
-		per[w]["wins"] += 1
-		for pp in m["players"]:
-			var pname := String(pp.get("name", ""))
-			if not per.has(pname):
-				continue
-			per[pname]["realms"] += int(pp.get("realms", 0))
-			per[pname]["steals"] += int(pp.get("steals", 0))
-			per[pname]["tributes"] += int(pp.get("tributes", 0))
-			# highest_rent aggregates as a MAX across matches — it's the
-			# single biggest rent that player has ever collected.
-			var hr := int(pp.get("highestRent", 0))
-			if hr > int(per[pname]["highest_rent"]):
-				per[pname]["highest_rent"] = hr
+		var slot: Dictionary = per[display_name]
+		slot["wins"] = int(e.get("wins", 0))
+		slot["realms"] = int(e.get("totalRealms", 0))
+		slot["steals"] = int(e.get("totalSteals", 0))
+		slot["tributes"] = int(e.get("totalTributes", 0))
+		slot["highest_rent"] = int(e.get("highestRent", 0))
+		slot["matches"] = int(e.get("matches", 0))
+		# Server returns winRate as 0..1; the UI treats it as an integer
+		# percent so scale here.
+		slot["win_rate"] = int(round(float(e.get("winRate", 0.0)) * 100.0))
+	# Games count for the "N games played" footer + score-block subtitle.
+	# In a two-player head-to-head roster both players have the same match
+	# count — use whichever is higher just in case one hasn't played yet.
+	var games := 0
 	for n in names:
-		per[n]["win_rate"] = int(round(float(per[n]["wins"]) / float(games) * 100.0)) if games > 0 else 0
-	# Best streak per player from chronological match list (oldest → newest).
-	var asc := valid.duplicate()
-	asc.sort_custom(func(a, b): return String(a.get("endedAt", "")) < String(b.get("endedAt", "")))
-	for n in names:
-		var best := 0
-		var run := 0
-		for m in asc:
-			if String(m["winner"]) == n:
-				run += 1
-				best = max(best, run)
-			else:
-				run = 0
-		per[n]["best_streak"] = best
-	var recent := valid.duplicate()
-	recent.sort_custom(func(a, b): return String(a.get("endedAt", "")) > String(b.get("endedAt", "")))
-	if recent.size() > 4:
-		recent.resize(4)
-	return {"games": games, "per": per, "recent": recent}
+		games = max(games, int(per[n]["matches"]))
+	return {"games": games, "per": per}
 
 # --- Versus header + stats panel + matches list -------------------------
 
@@ -421,7 +391,6 @@ func _build_compare_panel(totals: Dictionary) -> PanelContainer:
 		["STEALS", "steals", ""],
 		["TRIBUTES", "tributes", ""],
 		["HIGH RENT", "highest_rent", ""],
-		["BEST STREAK", "best_streak", ""],
 	]
 	for i in range(rows.size()):
 		var spec: Array = rows[i]

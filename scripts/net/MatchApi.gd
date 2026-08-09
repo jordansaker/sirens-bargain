@@ -85,9 +85,13 @@ static func post_match(host: Node, payload: Dictionary) -> void:
 		push_warning("MatchApi POST couldn't start: err %d" % err)
 		http.queue_free()
 
-# Async GET — invokes `on_done` with the parsed match array (or an empty
-# array on any failure, so callers don't need to distinguish error paths).
-static func fetch_matches(host: Node, on_done: Callable) -> void:
+# Async GET /leaderboard — invokes `on_done` with the parsed `entries` array
+# from the leaderboard response (or an empty array on any failure so callers
+# don't need to distinguish error paths). Each entry is a per-player
+# aggregate: {name, wins, losses, matches, winRate, totalRealms, totalSteals,
+# totalTributes, highestRent, lastMatchAt}. See LeaderboardResponse in the
+# server for the full TypeScript definition.
+static func fetch_leaderboard(host: Node, on_done: Callable) -> void:
 	if host == null or not host.is_inside_tree():
 		on_done.call([])
 		return
@@ -95,21 +99,25 @@ static func fetch_matches(host: Node, on_done: Callable) -> void:
 	host.add_child(http)
 	http.request_completed.connect(func(_result: int, code: int, _hdrs: PackedStringArray, body: PackedByteArray) -> void:
 		var body_text := body.get_string_from_utf8()
-		var matches: Array = []
+		var entries: Array = []
 		if code >= 200 and code < 300:
 			print("[MatchApi] GET ok HTTP %d" % code)
 			var parsed: Variant = JSON.parse_string(body_text)
-			if parsed is Array:
-				matches = parsed as Array
-			elif parsed is Dictionary and (parsed as Dictionary).has("matches"):
-				var m: Variant = (parsed as Dictionary)["matches"]
-				if m is Array:
-					matches = m
+			# Response envelope: {ok: true, entries: [...]} on success.
+			# {ok: false, error: "..."} on server-side rejection (still 200).
+			if parsed is Dictionary:
+				var d: Dictionary = parsed
+				if bool(d.get("ok", false)):
+					var e: Variant = d.get("entries", [])
+					if e is Array:
+						entries = e
+				else:
+					print("[MatchApi] GET server-error: %s" % String(d.get("error", "?")))
 		else:
 			print("[MatchApi] GET failed HTTP %d: %s" % [code, body_text])
 			push_warning("MatchApi GET HTTP %d: %s" % [code, body_text])
 		http.queue_free()
-		on_done.call(matches)
+		on_done.call(entries)
 	)
 	print("[MatchApi] GET %s" % GET_URL)
 	var err := http.request(GET_URL, _get_headers(), HTTPClient.METHOD_GET)
