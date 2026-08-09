@@ -1106,21 +1106,22 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 
 	# 6-stat grid: REALMS, PEARLS, STEALS, TRIBUTES, HIGH RENT, MOVES.
 	# MOVES = every discrete play this match (banks, lays, attaches, action
-	# plays, Ride the Current draws). Pairs with HIGH RENT as an efficiency
-	# read — fewer moves for the same realms/pearls = tighter play.
-	# Aggregated as MIN across matches in the leaderboard's
-	# leastAmountMoves field; per-game we show the raw count.
+	# plays, Ride the Current draws). Only meaningful for the winner — the
+	# match-history API records leastAmountMoves for the winner alone (loser's
+	# entry omits the key and the leaderboard aggregates 0 as "no data").
+	# Mirror that here: winner shows their raw count, loser shows 0.
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 6)
 	col.add_child(stats)
 	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0})
+	var moves_value: int = int(pstats.get("moves", 0)) if is_winner else 0
 	for spec in [
 		{"v": player.completed_realm_count(), "l": "REALMS"},
 		{"v": int(pstats.get("pearls", 0)), "l": "PEARLS"},
 		{"v": int(pstats.get("steals", 0)), "l": "STEALS"},
 		{"v": int(pstats.get("tributes", 0)), "l": "TRIBUTES"},
 		{"v": int(pstats.get("highest_rent", 0)), "l": "HIGH RENT"},
-		{"v": int(pstats.get("moves", 0)), "l": "MOVES"},
+		{"v": moves_value, "l": "MOVES"},
 	]:
 		stats.add_child(_build_stat_cell(spec["v"], spec["l"]))
 	return card
