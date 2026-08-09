@@ -564,15 +564,16 @@ func _apply_splash(_payload: Dictionary) -> void:
 	_do_splash_effect()
 
 func _do_splash_effect() -> void:
-	# Centre the ripple on the play area (Root's rect) so it reads as a
-	# whole-screen effect, not tied to any one widget.
+	# Centre the ripple on the play area. Parented to `self` so it draws on
+	# top of ActionMenu / RefusalPanel / any modal that might be open when
+	# the splash button fires (Root's SplashEffect draws under those).
 	var root := get_node_or_null("Root") as Control
 	if root == null:
 		return
 	if _sfx != null:
 		_sfx.play("action")
 	var rect := root.get_global_rect()
-	SplashEffect.spawn_at(root, rect.get_center())
+	SplashEffect.spawn_at(self, rect.get_center())
 
 # Underwater-earthquake feel: tween Root's position in decreasing random
 # offsets so the whole play area jitters, then settles. Cheap and works on
@@ -2819,16 +2820,16 @@ func _hide_menu() -> void:
 		_menu_root.visible = false
 
 func _splash_menu() -> void:
-	# Ripple concentric arcs from the menu's centre. Attached to Root so the
-	# splash renders in the overlay layer above gameplay but under nothing that
-	# blocks input (the SplashEffect Control ignores mouse itself).
+	# Attach to `self` (GameScreen) rather than Root: ActionMenu is a sibling
+	# of Root added later in the scene, so a splash inside Root draws UNDER
+	# the menu panel and is invisible. Adding to self appends at the end of
+	# GameScreen's children, so the splash draws above ActionMenu / every
+	# other overlay. SplashEffect ignores mouse itself so this doesn't block
+	# input.
 	if _menu_root == null:
 		return
-	var root := get_node_or_null("Root") as Control
-	if root == null:
-		return
 	var rect := _menu_root.get_global_rect()
-	SplashEffect.spawn_at(root, rect.get_center())
+	SplashEffect.spawn_at(self, rect.get_center())
 
 func _nudge_menu() -> void:
 	# Tiny 3-frame elastic wiggle on the menu itself — same "vibe" as the
