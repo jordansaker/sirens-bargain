@@ -716,10 +716,25 @@ func _apply_deck_init(payload: Dictionary) -> void:
 	_tm.payment_applied.connect(_on_payment_applied)
 	_configure_boards()
 	_refresh_all()
+	# IMPORTANT: enter the UI state WITHOUT calling _tm.start_turn() again.
+	# The host already drew the 2 turn-start cards for the current player
+	# before serialising this payload, so hands + draw_pile already reflect
+	# that draw. Calling _start_human_turn / _await_opponent_turn here would
+	# fire start_turn a second time and give the starting player 4 draws
+	# instead of 2, desyncing from the host's mirror.
 	if _gs.current_player_index == HUMAN_ID:
-		_start_human_turn()
+		_state = InteractionState.IDLE
+		_selected_card = null
+		_ctx.clear()
+		_refresh_all()
+		_flash_turn_banner("YOUR TURN")
+		_prompt("Tap a card in your hand.")
 	else:
-		_await_opponent_turn()
+		_state = InteractionState.AI_TURN
+		_selected_card = null
+		_refresh_all()
+		_flash_turn_banner(("%s's turn" % OPPONENT_NAME).to_upper())
+		_prompt("Waiting for %s…" % OPPONENT_NAME)
 
 func _apply_end_turn(payload: Dictionary) -> void:
 	var actor: int = int(payload.get("actor", -1))
