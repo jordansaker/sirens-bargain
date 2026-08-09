@@ -35,14 +35,22 @@ static func post_match(host: Node, payload: Dictionary) -> void:
 		return
 	var http := HTTPRequest.new()
 	host.add_child(http)
+	# print + push_warning both — print surfaces to the browser console on the
+	# web build (push_warning only shows in the Godot editor).
 	http.request_completed.connect(func(_result: int, code: int, _hdrs: PackedStringArray, body: PackedByteArray) -> void:
+		var body_text := body.get_string_from_utf8()
 		if code < 200 or code >= 300:
-			push_warning("MatchApi POST HTTP %d: %s" % [code, body.get_string_from_utf8()])
+			print("[MatchApi] POST failed HTTP %d: %s" % [code, body_text])
+			push_warning("MatchApi POST HTTP %d: %s" % [code, body_text])
+		else:
+			print("[MatchApi] POST ok HTTP %d" % code)
 		http.queue_free()
 	)
 	var body := JSON.stringify(payload)
+	print("[MatchApi] POST %s body=%s" % [BASE_URL, body])
 	var err := http.request(BASE_URL, _base_headers(), HTTPClient.METHOD_POST, body)
 	if err != OK:
+		print("[MatchApi] POST couldn't start: err %d" % err)
 		push_warning("MatchApi POST couldn't start: err %d" % err)
 		http.queue_free()
 

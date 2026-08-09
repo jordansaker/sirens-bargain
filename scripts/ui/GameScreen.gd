@@ -159,6 +159,11 @@ var _fan_timer: SceneTreeTimer = null
 var _fan_locked: bool = false
 var _fan_last_toggle_msec: int = 0
 var _zoom_enabled: bool = false
+# Persisted so the host can re-serialise the deck_init payload when the guest
+# asks (rematch race: host builds the deck before the guest's new scene has
+# wired up, guest requests once ready). Kept alongside the built _gs so the
+# hands + draw_order in the resend match what the host started with.
+var _deck_init_seed: int = 0
 # Hand drag-to-reorder scratchpad. Populated by _on_hand_drag_started, updated
 # by _on_hand_drag_moved as the pointer crosses card slots, and consumed by
 # _on_hand_drag_ended when the pointer releases. Cosmetic only — never
@@ -218,6 +223,7 @@ func _ready() -> void:
 	_hide_refusal_modal()
 	if _waiting_for_deck_init:
 		_prompt("Waiting for host to deal…")
+		_kick_off_deck_request()
 	elif _is_online and _gs.current_player_index != HUMAN_ID:
 		# Host built the deck but the guest is younger and starts first —
 		# hand the local peer directly into the waiting state.
@@ -242,6 +248,7 @@ func _setup_game() -> void:
 
 	var deck := DeckBuilder.build_deck()
 	var seed_value: int = Time.get_ticks_usec()
+	_deck_init_seed = seed_value
 	_gs = GameState.new(2, deck, seed_value)
 	_tm = TurnManager.new(_gs)
 	_shuffle_draw_pile()
@@ -252,12 +259,15 @@ func _setup_game() -> void:
 				p.hand.append(c)
 	if _is_online:
 		# Host: youngest-goes-first tie-break lives on NetSession and is
-		# computed identically on both peers. Set it before broadcasting so
-		# the guest picks up the right current_player.
+		# computed identically on both peers. Set it before the guest asks
+		# so the resend picks up the right current_player.
 		var ns := get_tree().root.get_node_or_null("NetSession")
 		if ns != null and ns.has_method("starting_player_id"):
 			_gs.current_player_index = ns.starting_player_id()
-		_net_client.send(NetProtocol.build_deck_init(_gs, seed_value))
+		# NOTE: we no longer eagerly send deck_init here. On rematch the guest's
+		# new scene isn't wired to receive it yet, so the eager send raced past
+		# them and left them stuck on "Waiting for host to deal…". The guest
+		# now requests it (KIND_REQUEST_DECK) once ready and we respond then.
 	else:
 		# Vs-AI mode: the opponent seat is an AIOpponent.
 		_ais[1] = AIOpponent.new(1)
@@ -614,9 +624,50 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_settle_payment(payload)
 		NetProtocol.KIND_NUDGE:
 			_apply_nudge(payload)
+		NetProtocol.KIND_REQUEST_DECK:
+			_on_deck_requested()
 		_:
 			# Unknown event — log for debugging.
 			_append_log("[color=#e88][unknown event %s][/color]" % kind)
+
+# Host: guest just asked for the initial deal. Re-serialise _gs into a fresh
+# deck_init payload and send it. Idempotent — the guest may retry several
+# times before we hear it (e.g. if our _ready hadn't wired up in time).
+func _on_deck_requested() -> void:
+	if not _is_online or HUMAN_ID != 0:
+		return
+	if _gs == null or _net_client == null:
+		return
+	_net_client.send(NetProtocol.build_deck_init(_gs, _deck_init_seed))
+
+# Guest: send a deck_init request now and re-send every ~700ms until we get
+# a deck_init back. Handles the rematch race where the host's new scene
+# hasn't wired its event_received listener yet when the first request lands.
+func _kick_off_deck_request() -> void:
+	if _net_client == null:
+		return
+	_send_deck_request_once()
+	var timer := Timer.new()
+	timer.name = "DeckRequestRetry"
+	timer.wait_time = 0.7
+	timer.one_shot = false
+	timer.autostart = true
+	timer.timeout.connect(_on_deck_request_retry)
+	add_child(timer)
+
+func _send_deck_request_once() -> void:
+	if _net_client == null or not _waiting_for_deck_init:
+		return
+	_net_client.send({"kind": NetProtocol.KIND_REQUEST_DECK})
+
+func _on_deck_request_retry() -> void:
+	# Deck arrived while the timer was running — tear ourselves down.
+	if not _waiting_for_deck_init:
+		var t := get_node_or_null("DeckRequestRetry") as Timer
+		if t != null:
+			t.queue_free()
+		return
+	_send_deck_request_once()
 
 # Guest applies the host's initial deal, then hooks into the turn loop.
 func _apply_deck_init(payload: Dictionary) -> void:

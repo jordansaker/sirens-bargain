@@ -46,6 +46,10 @@ const KIND_RESOLVE := "resolve"
 const KIND_SETTLE_PAYMENT := "settle_payment"
 const KIND_NUDGE := "nudge"
 const KIND_END_TURN := "end_turn"
+# Guest→Host: "please (re-)send me the deck_init payload." Sent when the
+# guest's GameScreen finishes wiring up and is waiting on the initial deal.
+# Idempotent — the host just re-serialises current game_state.
+const KIND_REQUEST_DECK := "request_deck"
 
 # Serialise a GameState + starting hands into a deck_init payload. Called
 # once by the host at match start; the guest applies via `apply_deck_init`.
