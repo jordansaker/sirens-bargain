@@ -804,7 +804,9 @@ func _apply_reassign_wild(payload: Dictionary) -> void:
 # modifier stack, look it up there and apply the move on the mirror.
 func _apply_move_modifier(payload: Dictionary) -> void:
 	var actor: int = int(payload.get("actor", -1))
+	print("[Modifier] _apply_move_modifier remote: actor=%d payload=%s" % [actor, str(payload)])
 	if actor < 0:
+		print("[Modifier] apply: actor<0, bailing")
 		return
 	var player: PlayerState = _gs.players[actor]
 	var from_realm := String(payload.get("from", ""))
@@ -816,8 +818,11 @@ func _apply_move_modifier(payload: Dictionary) -> void:
 			card = m
 			break
 	if card == null:
+		print("[Modifier] apply: card_id=%s NOT FOUND in players[%d].modifiers_on(%s) — mirror desync" \
+			% [card_id, actor, from_realm])
 		return
-	player.move_modifier(card, from_realm, to_realm)
+	var ok := player.move_modifier(card, from_realm, to_realm)
+	print("[Modifier] apply: move_modifier returned %s" % str(ok))
 	_refresh_all()
 
 # Broadcast a local action to the opponent (no-op in vs-AI mode).
@@ -2128,6 +2133,12 @@ func _begin_play_action(card: CardData) -> void:
 			if pending == null:
 				_reset_to_idle()
 				return
+			# Card is already in discard in game state — refresh now so the
+			# player's own hand doesn't visibly hold the card during the
+			# refusal wait. Otherwise the resolve (~1.5s+ away) is the first
+			# frame the discard actually looks correct.
+			_selected_card = null
+			_refresh_all()
 			if _is_online:
 				_broadcast({
 					"kind": NetProtocol.KIND_INIT_FEAST,
@@ -2171,6 +2182,11 @@ func _do_toll(target_id: int) -> void:
 	if pending == null:
 		_reset_to_idle()
 		return
+	# Card is already in discard in game state — refresh so it visibly
+	# leaves the hand immediately instead of lingering there through the
+	# refusal wait (see _do_* pattern).
+	_selected_card = null
+	_refresh_all()
 	if _is_online:
 		_broadcast({
 			"kind": NetProtocol.KIND_INIT_TOLL,
@@ -2221,6 +2237,8 @@ func _do_kraken(target_id: int, realm_name: String) -> void:
 	if pending == null:
 		_reset_to_idle()
 		return
+	_selected_card = null
+	_refresh_all()  # Move card out of hand visually — see _do_* pattern.
 	if _is_online:
 		_broadcast({
 			"kind": NetProtocol.KIND_INIT_KRAKEN,
@@ -2318,6 +2336,8 @@ func _do_eel(dest_realm: String) -> void:
 	if pending == null:
 		_reset_to_idle()
 		return
+	_selected_card = null
+	_refresh_all()  # Move card out of hand visually — see _do_* pattern.
 	if _is_online:
 		_broadcast({
 			"kind": NetProtocol.KIND_INIT_EEL,
@@ -2472,6 +2492,8 @@ func _do_trade(their_board_dest: String) -> void:
 	if pending == null:
 		_reset_to_idle()
 		return
+	_selected_card = null
+	_refresh_all()  # Move card out of hand visually — see _do_* pattern.
 	if _is_online:
 		_broadcast({
 			"kind": NetProtocol.KIND_INIT_TRADE,
@@ -2676,6 +2698,8 @@ func _do_tribute(charger_realm: String, target_id: int = -1, high_tide: CardData
 	if pending == null:
 		_reset_to_idle()
 		return
+	_selected_card = null
+	_refresh_all()  # Move card out of hand visually — see _do_* pattern.
 	var label := "Tribute (%s)" % charger_realm
 	if high_tide != null:
 		label += " + High Tide"
@@ -3313,10 +3337,14 @@ func _on_peek_modifier_selected(_card: CardData, mod: CardData, from_realm: Stri
 
 func _do_move_modifier(mod: CardData, from_realm: String, to_realm: String) -> void:
 	var human: PlayerState = _gs.players[HUMAN_ID]
+	print("[Modifier] _do_move_modifier local: %s from=%s to=%s HUMAN=%d online=%s" \
+		% [mod.id, from_realm, to_realm, HUMAN_ID, str(_is_online)])
 	if not human.move_modifier(mod, from_realm, to_realm):
+		print("[Modifier] local move_modifier() returned FALSE — refused by PlayerState")
 		_prompt("Can't move %s there." % _modifier_display_name(mod))
 		_reset_to_idle()
 		return
+	print("[Modifier] local move applied, broadcasting")
 	_prompt("Moved %s from %s to %s." % [_modifier_display_name(mod), from_realm, to_realm])
 	_broadcast({
 		"kind": NetProtocol.KIND_MOVE_MODIFIER,
@@ -4104,15 +4132,19 @@ func _run_online_refusable_flow() -> Variant:
 			return null
 	return _last_resolve_result
 
-# Hold the attacker's peer until at least _REFUSABLE_MASK_MSEC has passed
-# since the action was initiated. No-op on the defender's peer — they
-# already know their own decision, so masking their view just feels laggy.
+# Delay the caller until at least _REFUSABLE_MASK_MSEC has passed since
+# the current refusable action was initiated. Used by both peers of the
+# HvH refusal protocol:
+#   - Attacker's _apply_resolve pads the visible resolve so a fast no-card
+#     auto-pass never lands faster than a slow accept — closes the "resolve
+#     arrival time reveals the defender's card" tell.
+#   - Defender's _apply_resolve_locally_and_broadcast / REFUSE broadcast
+#     path holds the OUTBOUND packet to the same floor, so even the
+#     network-layer timing can't leak.
+# Previously guarded on `initiator_id == HUMAN_ID` to skip the defender's
+# lag ("they already know") — but that left the attacker's mirror seeing
+# instant broadcasts from a no-card defender, which is exactly the tell.
 func _wait_for_refusable_mask() -> void:
-	var pending: PendingAction = _gs.pending_action
-	if pending == null:
-		return
-	if pending.initiator_id != HUMAN_ID:
-		return
 	var elapsed := Time.get_ticks_msec() - _pending_action_initiated_msec
 	var remaining := _REFUSABLE_MASK_MSEC - elapsed
 	if remaining > 0:
@@ -4134,13 +4166,18 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 			var wants: bool = await _prompt_local_refusal(pa)
 			if wants:
 				_tm.refuse(target_id, HUMAN_ID, refusal_card)
+				_refresh_all()
+				# Mask the outbound REFUSE the same way we mask RESOLVE — a
+				# defender who slams Refuse the instant the modal opens
+				# would otherwise land the refusal at the attacker much
+				# faster than a defender who deliberated, revealing intent.
+				await _wait_for_refusable_mask()
 				_broadcast({
 					"kind": NetProtocol.KIND_REFUSE,
 					"target": target_id,
 					"refuser": HUMAN_ID,
 					"card_id": refusal_card.id,
 				})
-				_refresh_all()
 				# Loop — opponent gets to counter-refuse or resolve.
 			else:
 				await _apply_resolve_locally_and_broadcast()
@@ -4156,13 +4193,16 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 	return "cancelled"
 
 func _apply_resolve_locally_and_broadcast() -> void:
-	# Broadcast first so the opponent's peer starts its own resolve without
-	# waiting on our mask. THEN pad locally before applying — the attacker
-	# sees a consistent delay regardless of how fast the decision landed.
-	_broadcast({"kind": NetProtocol.KIND_RESOLVE})
-	await _wait_for_refusable_mask()
+	# Apply locally FIRST so our own view resolves at natural speed —
+	# holding the local resolve behind the mask is what "feels laggy" to
+	# the defender. THEN wait out the mask before broadcasting, so the
+	# attacker's mirror can't distinguish a no-card auto-pass (arrives at
+	# ~50ms) from a considered-then-accepted (arrives at 800ms) — both
+	# now arrive at ≥ _REFUSABLE_MASK_MSEC.
 	_last_resolve_result = _tm.resolve_pending()
 	_refresh_all()
+	await _wait_for_refusable_mask()
+	_broadcast({"kind": NetProtocol.KIND_RESOLVE})
 
 # Receiver-side entry point — called after applying an INITIATE_* event. We
 # run our own refusal cycle in parallel with the attacker's; both cycles
