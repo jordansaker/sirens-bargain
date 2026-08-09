@@ -80,6 +80,10 @@ const CH_INK_ON_GOLD := Color("2A1F07")
 @onready var _refusal_panel: Panel = %RefusalPanel
 @onready var _refusal_title: Label = %RefusalTitle
 @onready var _refusal_body: Label = %RefusalBody
+# Lazy-built row for card-art previews of the card/set being stolen — sits
+# between the title and the body text so the player can see EXACTLY what's
+# on the line before deciding to burn a Siren's Refusal.
+var _refusal_cards_row: HBoxContainer = null
 @onready var _refuse_button: Button = %RefuseButton
 @onready var _accept_button: Button = %AcceptButton
 
@@ -155,6 +159,15 @@ var _fan_timer: SceneTreeTimer = null
 var _fan_locked: bool = false
 var _fan_last_toggle_msec: int = 0
 var _zoom_enabled: bool = false
+# Hand drag-to-reorder scratchpad. Populated by _on_hand_drag_started, updated
+# by _on_hand_drag_moved as the pointer crosses card slots, and consumed by
+# _on_hand_drag_ended when the pointer releases. Cosmetic only — never
+# broadcast; the underlying hand array reorder is local to this peer.
+var _drag_card: CardData = null
+var _drag_view: CardView = null
+var _drag_from_index: int = -1
+var _drag_current_index: int = -1
+var _drag_grab_offset: Vector2 = Vector2.ZERO
 # 3 dots below the plays counter — filled = plays remaining, dim = spent.
 var _plays_dots: HBoxContainer = null
 # Match timer + stats — populated at setup, updated live via TurnManager
@@ -1101,6 +1114,7 @@ func _prompt_human_refusal(target_id: int, pending: PendingAction) -> bool:
 func _show_refusal_modal(pending: PendingAction) -> void:
 	_refusal_title.text = "%s is playing an action on you" % OPPONENT_NAME
 	_refusal_body.text = _describe_pending_for_refusal(pending)
+	_populate_refusal_cards_row(pending)
 	_refusal_scrim.visible = true
 	_refusal_panel.visible = true
 
@@ -1109,6 +1123,82 @@ func _hide_refusal_modal() -> void:
 		_refusal_panel.visible = false
 	if _refusal_scrim != null:
 		_refusal_scrim.visible = false
+	# Free the CardView previews so their textures release — the modal
+	# doesn't need to keep them around while it's hidden.
+	if _refusal_cards_row != null:
+		for child in _refusal_cards_row.get_children():
+			child.queue_free()
+		_refusal_cards_row.visible = false
+
+# Build the card-art preview row on first use. Sits just below the title.
+func _ensure_refusal_cards_row() -> void:
+	if _refusal_cards_row != null:
+		return
+	if _refusal_panel == null:
+		return
+	var vbox := _refusal_panel.get_node_or_null("RefusalMargin/RefusalVBox") as VBoxContainer
+	if vbox == null:
+		return
+	_refusal_cards_row = HBoxContainer.new()
+	_refusal_cards_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_refusal_cards_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(_refusal_cards_row)
+	var title := vbox.get_node_or_null("RefusalTitle")
+	if title != null:
+		vbox.move_child(_refusal_cards_row, title.get_index() + 1)
+
+# Populate the preview row with mini CardViews of the exact card(s) or set
+# being targeted. Empty for tribute-family actions (no specific card art to
+# show — the body text already spells out the amount owed).
+func _populate_refusal_cards_row(pending: PendingAction) -> void:
+	_ensure_refusal_cards_row()
+	if _refusal_cards_row == null:
+		return
+	for child in _refusal_cards_row.get_children():
+		child.queue_free()
+	var cards := _refusal_preview_cards(pending)
+	_refusal_cards_row.visible = not cards.is_empty()
+	if cards.is_empty():
+		return
+	# Scale each card down to fit inside the modal — CardView.WIDTH/HEIGHT
+	# (180×252) is way too big for a dialog. Preserve aspect ratio.
+	var mini_w := 96
+	var mini_h := int(round(float(mini_w) * float(CardView.HEIGHT) / float(CardView.WIDTH)))
+	for c in cards:
+		var view := CardView.new()
+		view.custom_minimum_size = Vector2(mini_w, mini_h)
+		view.card = c
+		_refusal_cards_row.add_child(view)
+
+func _refusal_preview_cards(pending: PendingAction) -> Array:
+	var out: Array = []
+	if pending == null:
+		return out
+	match pending.kind:
+		"krakens_grasp":
+			var realm: String = String(pending.payload.get("realm_name", ""))
+			var target_id: int = pending.targets[0] if not pending.targets.is_empty() else -1
+			if target_id >= 0 and not realm.is_empty():
+				var victim: PlayerState = _gs.players[target_id]
+				var stack: Array = victim.realms.get(realm, [])
+				for c in stack:
+					if c is CardData:
+						out.append(c)
+		"slippery_eel":
+			var c: Variant = pending.payload.get("stolen_card")
+			if c is CardData:
+				out.append(c)
+		"trade_winds":
+			# their_card = the victim's card being taken; own_card = the
+			# attacker's card being handed over. Show victim's card first so
+			# the modal reads "losing THIS in exchange for THAT".
+			var yours: Variant = pending.payload.get("their_card")
+			var theirs: Variant = pending.payload.get("own_card")
+			if yours is CardData:
+				out.append(yours)
+			if theirs is CardData:
+				out.append(theirs)
+	return out
 
 static func _describe_pending_for_refusal(pending: PendingAction) -> String:
 	match pending.kind:
@@ -1273,6 +1363,9 @@ func _refresh_hand() -> void:
 		var is_lifted := _is_hand_card_lifted(c)
 		view.selected_state = is_lifted
 		view.selected.connect(_on_hand_card_selected)
+		view.drag_started.connect(_on_hand_drag_started)
+		view.drag_moved.connect(_on_hand_drag_moved)
+		view.drag_ended.connect(_on_hand_drag_ended)
 		_hand_row.add_child(view)
 		view.position = _hand_card_target(i, is_lifted, _selected_hand_index())
 		view.size = Vector2(CardView.WIDTH, CardView.HEIGHT)
@@ -1371,6 +1464,105 @@ func _reflow_hand() -> void:
 		tw.set_parallel(true)
 		tw.tween_property(view, "position", target, _HAND_ANIM_TIME) \
 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _on_hand_drag_started(card: CardData, gpos: Vector2) -> void:
+	# Drag-to-reorder is a local convenience — disallow it during targeting
+	# picks and discard multi-select, where it would collide with the picker
+	# state or the multi-lift.
+	if _state == InteractionState.DISCARD or _state == InteractionState.GAME_OVER:
+		return
+	if _is_targeting_state():
+		return
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	_drag_from_index = human.hand.find(card)
+	if _drag_from_index < 0:
+		return
+	_drag_card = card
+	_drag_current_index = _drag_from_index
+	for i in range(_hand_row.get_child_count()):
+		var v := _hand_row.get_child(i) as CardView
+		if v != null and v.card == card:
+			_drag_view = v
+			# Draw on top of siblings + visually lift so the drag is obvious.
+			_hand_row.move_child(v, -1)
+			_drag_view.selected_state = true
+			# Preserve the pointer-to-card-corner offset so the card doesn't
+			# jump under the finger when the drag starts.
+			var local: Vector2 = _hand_row.get_global_transform().affine_inverse() * gpos
+			_drag_grab_offset = _drag_view.position - local
+			break
+
+func _on_hand_drag_moved(card: CardData, gpos: Vector2) -> void:
+	if _drag_view == null or _drag_card != card:
+		return
+	var local: Vector2 = _hand_row.get_global_transform().affine_inverse() * gpos
+	_drag_view.position = local + _drag_grab_offset
+	var step_ratio := 0.85 if _hand_fanned else 0.28
+	var overlap := int(CardView.WIDTH * step_ratio)
+	var count: int = _gs.players[HUMAN_ID].hand.size()
+	if overlap <= 0 or count <= 0:
+		return
+	# Snap the drop index off the dragged card's centre X. round() puts the
+	# boundary between two slots halfway between their centres — feels right.
+	var center_x: float = _drag_view.position.x + float(CardView.WIDTH) * 0.5
+	var new_index: int = int(clamp(round((center_x - float(CardView.WIDTH) * 0.5) / float(overlap)), 0, count - 1))
+	if new_index != _drag_current_index:
+		_drag_current_index = new_index
+		_reflow_hand_ghost()
+
+func _reflow_hand_ghost() -> void:
+	# Slide siblings into their positions in the hypothetical reorder (drag
+	# card removed from `from_i` and inserted at `to_i`). Uses the same tween
+	# duration as normal selection reflow so it feels consistent.
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	var step_ratio := 0.85 if _hand_fanned else 0.28
+	var overlap := int(CardView.WIDTH * step_ratio)
+	var lift := CardView.LIFT_PX
+	var from_i := _drag_from_index
+	var to_i := _drag_current_index
+	for child in _hand_row.get_children():
+		if child == _drag_view:
+			continue
+		var v := child as CardView
+		if v == null:
+			continue
+		var orig: int = human.hand.find(v.card)
+		if orig < 0:
+			continue
+		var virt := orig
+		if from_i < to_i:
+			if orig > from_i and orig <= to_i:
+				virt = orig - 1
+		elif from_i > to_i:
+			if orig >= to_i and orig < from_i:
+				virt = orig + 1
+		var target := Vector2(virt * overlap, float(lift))
+		var tw := v.create_tween()
+		tw.tween_property(v, "position", target, _HAND_ANIM_TIME) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+func _on_hand_drag_ended(card: CardData, _gpos: Vector2) -> void:
+	if _drag_view == null or _drag_card != card:
+		_drag_card = null
+		_drag_view = null
+		_drag_from_index = -1
+		_drag_current_index = -1
+		return
+	var human: PlayerState = _gs.players[HUMAN_ID]
+	var from_i := _drag_from_index
+	var to_i: int = int(clamp(_drag_current_index, 0, human.hand.size() - 1))
+	_drag_card = null
+	_drag_view = null
+	_drag_from_index = -1
+	_drag_current_index = -1
+	if from_i != to_i and from_i >= 0 and to_i >= 0:
+		var moved: CardData = human.hand[from_i]
+		human.hand.remove_at(from_i)
+		human.hand.insert(to_i, moved)
+	# _refresh_hand rebuilds child order when the underlying hand differs
+	# from the current children — no-op reorder falls through to _reflow_hand
+	# which snaps the dragged view back to its slot.
+	_refresh_hand()
 
 func _refresh_actions() -> void:
 	if _state == InteractionState.GAME_OVER:
@@ -2512,10 +2704,42 @@ func _show_menu(title: String, options: Array) -> void:
 	# Ensure the top of the list is visible even if there are many options
 	# (Rainbow Conch has 10 target realms — bottom would clip without scroll).
 	_menu_scroll.scroll_vertical = 0
+	# Splash ripple + subtle nudge so the popup arrives with a sense of impact
+	# instead of blinking into place. Uses the same shake used for the "hurry
+	# up" nudge, scaled down so it doesn't jolt the whole screen for menu open.
+	_splash_menu()
+	_nudge_menu()
 
 func _hide_menu() -> void:
 	if _menu_root != null:
 		_menu_root.visible = false
+
+func _splash_menu() -> void:
+	# Ripple concentric arcs from the menu's centre. Attached to Root so the
+	# splash renders in the overlay layer above gameplay but under nothing that
+	# blocks input (the SplashEffect Control ignores mouse itself).
+	if _menu_root == null:
+		return
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	var rect := _menu_root.get_global_rect()
+	SplashEffect.spawn_at(root, rect.get_center())
+
+func _nudge_menu() -> void:
+	# Tiny 3-frame elastic wiggle on the menu itself — same "vibe" as the
+	# opponent-nudge shake but tightly localised so it doesn't move the whole
+	# playfield when the menu is just opening.
+	if _menu_root == null:
+		return
+	var origin := _menu_root.position
+	var tw := create_tween()
+	tw.tween_property(_menu_root, "position", origin + Vector2(0, -6), 0.06) \
+		.set_trans(Tween.TRANS_SINE)
+	tw.tween_property(_menu_root, "position", origin + Vector2(0, 3), 0.08) \
+		.set_trans(Tween.TRANS_SINE)
+	tw.tween_property(_menu_root, "position", origin, 0.14) \
+		.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 
 # Paint a menu button in the realm's chip colour so realm-name buttons match
 # the coloured chips on the boards.

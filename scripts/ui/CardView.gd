@@ -12,6 +12,11 @@ extends PanelContainer
 # out of the top of the row without needing a separate modal.
 
 signal selected(card: CardData)
+# Emitted when the pointer has moved past _DRAG_THRESHOLD_PX while the button
+# is still held — GameScreen uses this to start a tap-and-drag hand reorder.
+signal drag_started(card: CardData, global_pos: Vector2)
+signal drag_moved(card: CardData, global_pos: Vector2)
+signal drag_ended(card: CardData, global_pos: Vector2)
 
 const WIDTH := 180
 const HEIGHT := 252
@@ -228,12 +233,39 @@ func _refresh_style() -> void:
 	if _hint_label != null:
 		_hint_label.add_theme_color_override("font_color", CardColors.SELECT)
 
+const _DRAG_THRESHOLD_PX := 10.0
+
+var _press_pos: Vector2 = Vector2.ZERO
+var _pressing: bool = false
+var _dragging: bool = false
+
 func _on_gui_input(event: InputEvent) -> void:
 	# Only listen to mouse events — `emulate_mouse_from_touch` is on in
 	# project settings so touches on mobile already fire here as
-	# InputEventMouseButton. Adding a parallel InputEventScreenTouch branch
-	# would double-fire the tap and toggle-toggle the selection back off.
+	# InputEventMouseButton. We disambiguate tap vs drag by tracking press
+	# position: exceed the threshold before release → drag; release before
+	# threshold → tap-select. This lets the hand-fan support drag-to-reorder
+	# without stealing the fast single-tap selection path.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
-			selected.emit(card)
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed:
+			_press_pos = mb.global_position
+			_pressing = true
+			_dragging = false
+		else:
+			if _dragging:
+				drag_ended.emit(card, mb.global_position)
+			elif _pressing:
+				selected.emit(card)
+			_pressing = false
+			_dragging = false
+	elif event is InputEventMouseMotion and _pressing:
+		var mm := event as InputEventMouseMotion
+		if not _dragging:
+			if mm.global_position.distance_to(_press_pos) > _DRAG_THRESHOLD_PX:
+				_dragging = true
+				drag_started.emit(card, mm.global_position)
+		if _dragging:
+			drag_moved.emit(card, mm.global_position)
