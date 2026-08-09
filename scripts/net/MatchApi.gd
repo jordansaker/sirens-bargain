@@ -21,7 +21,8 @@ extends RefCounted
 #   attaches, action plays, Ride the Current draws). Leaderboard aggregates
 #   as a MIN across matches — the player's fewest-moves game.
 #   The GET returns the same schema per match; the leaderboard aggregates
-#   `highestRent` as a MAX across matches (biggest-ever rent per player).
+#   `highestRent` as a MAX across matches (biggest-ever rent per player)
+#   and `leastAmountMoves` as a MIN (fewest-moves-in-a-single-match).
 
 const BASE_URL := "https://hq.jordansakerdev.com/api/sirens-bargain"
 const POST_URL := BASE_URL + "/matches"

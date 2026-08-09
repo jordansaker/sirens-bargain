@@ -229,7 +229,7 @@ func _compute_totals() -> Dictionary:
 	var per: Dictionary = {}
 	for n in names:
 		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0,
-			"highest_rent": 0, "win_rate": 0, "matches": 0}
+			"highest_rent": 0, "least_moves": 0, "win_rate": 0, "matches": 0}
 	for e in _entries:
 		if not (e is Dictionary):
 			continue
@@ -247,6 +247,7 @@ func _compute_totals() -> Dictionary:
 		slot["steals"] = int(e.get("totalSteals", 0))
 		slot["tributes"] = int(e.get("totalTributes", 0))
 		slot["highest_rent"] = int(e.get("highestRent", 0))
+		slot["least_moves"] = int(e.get("leastAmountMoves", 0))
 		slot["matches"] = int(e.get("matches", 0))
 		# Server returns winRate as 0..1; the UI treats it as an integer
 		# percent so scale here.
@@ -384,22 +385,41 @@ func _build_compare_panel(totals: Dictionary) -> PanelContainer:
 	var a_name := String(PLAYERS[0]["name"])
 	var b_name := String(PLAYERS[1]["name"])
 	var per: Dictionary = totals["per"]
+	# Row spec: [label, key, suffix, lower_is_better].
+	# LEAST MOVES is the only "lower wins" stat — flipped so the smaller
+	# side gets the highlighted arrow.
 	var rows := [
-		["WINS", "wins", ""],
-		["WIN RATE", "win_rate", "%"],
-		["REALMS", "realms", ""],
-		["STEALS", "steals", ""],
-		["TRIBUTES", "tributes", ""],
-		["HIGH RENT", "highest_rent", ""],
+		["WINS", "wins", "", false],
+		["WIN RATE", "win_rate", "%", false],
+		["REALMS", "realms", "", false],
+		["STEALS", "steals", "", false],
+		["TRIBUTES", "tributes", "", false],
+		["HIGH RENT", "highest_rent", "", false],
+		["LEAST MOVES", "least_moves", "", true],
 	]
 	for i in range(rows.size()):
 		var spec: Array = rows[i]
 		var lab: String = spec[0]
 		var key: String = spec[1]
 		var suffix: String = spec[2]
+		var lower_is_better: bool = bool(spec[3])
 		var a := int(per[a_name][key])
 		var b := int(per[b_name][key])
-		col.add_child(_build_compare_row(lab, "%s%s" % [str(a), suffix], "%s%s" % [str(b), suffix], a >= b, b >= a))
+		var left_win: bool
+		var right_win: bool
+		if lower_is_better:
+			# If either side has never played (0), skip highlighting so a
+			# fresh roster doesn't look like everyone is winning at zero.
+			if a <= 0 or b <= 0:
+				left_win = false
+				right_win = false
+			else:
+				left_win = a <= b
+				right_win = b <= a
+		else:
+			left_win = a >= b
+			right_win = b >= a
+		col.add_child(_build_compare_row(lab, "%s%s" % [str(a), suffix], "%s%s" % [str(b), suffix], left_win, right_win))
 		if i < rows.size() - 1:
 			var sep := ColorRect.new()
 			sep.custom_minimum_size = Vector2(0, 1)
