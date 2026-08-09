@@ -304,9 +304,18 @@ func _track_payment_for_stats(_payer_id: int, receiver_id: int, total: int, _car
 		_match_stats[receiver_id]["highest_rent"] = total
 
 func _shuffle_draw_pile() -> void:
+	# Uses a scratch RNG so _gs.rng stays untouched. This matters for HvH
+	# sync: the host runs this at setup while the guest doesn't — if the
+	# shuffle mutated _gs.rng, the two peers would enter the game with
+	# different RNG state and any in-game reshuffle (draw pile → discard
+	# recycled) would produce a DIFFERENT order on each side → desync. With
+	# a scratch RNG, both peers' _gs.rng starts at seed_value untouched, so
+	# GameState._reshuffle_discard_into_draw produces identical outputs.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _deck_init_seed
 	var arr: Array[CardData] = _gs.draw_pile
 	for i in range(arr.size() - 1, 0, -1):
-		var j := _gs.rng.randi_range(0, i)
+		var j := rng.randi_range(0, i)
 		var tmp := arr[i]
 		arr[i] = arr[j]
 		arr[j] = tmp
