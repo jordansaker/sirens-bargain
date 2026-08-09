@@ -106,6 +106,7 @@ signal _remote_payment_decided
 @onready var _fan_button: Button = %FanButton
 @onready var _zoom_button: Button = %ZoomButton
 @onready var _nudge_button: Button = %NudgeButton
+@onready var _splash_button: Button = %SplashButton
 @onready var _menu_root: Panel = %ActionMenu
 @onready var _menu_title: Label = %MenuTitle
 @onready var _menu_scroll: ScrollContainer = %MenuScroll
@@ -347,6 +348,7 @@ func _wire_signals() -> void:
 	_fan_button.toggled.connect(_on_fan_toggled)
 	_zoom_button.toggled.connect(_on_zoom_toggled)
 	_nudge_button.pressed.connect(_on_nudge_pressed)
+	_splash_button.pressed.connect(_on_splash_pressed)
 	var discard_box := get_node_or_null("Root/GameCol/MidTable/DiscardPileBox")
 	if discard_box is Control:
 		(discard_box as Control).mouse_filter = Control.MOUSE_FILTER_STOP
@@ -544,6 +546,34 @@ func _apply_nudge(_payload: Dictionary) -> void:
 	# Received a nudge from the opponent — shake our screen.
 	_do_shake_effect()
 
+# Splash: sibling of Nudge — spawns the ripple splash centred on the screen
+# locally and (in HvH) tells the opponent's peer to do the same. Same rate
+# limit as nudge to prevent spam.
+var _splash_last_msec: int = 0
+
+func _on_splash_pressed() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _splash_last_msec < 3000:
+		return
+	_splash_last_msec = now
+	_do_splash_effect()
+	if _is_online:
+		_broadcast({"kind": NetProtocol.KIND_SPLASH, "actor": HUMAN_ID})
+
+func _apply_splash(_payload: Dictionary) -> void:
+	_do_splash_effect()
+
+func _do_splash_effect() -> void:
+	# Centre the ripple on the play area (Root's rect) so it reads as a
+	# whole-screen effect, not tied to any one widget.
+	var root := get_node_or_null("Root") as Control
+	if root == null:
+		return
+	if _sfx != null:
+		_sfx.play("action")
+	var rect := root.get_global_rect()
+	SplashEffect.spawn_at(root, rect.get_center())
+
 # Underwater-earthquake feel: tween Root's position in decreasing random
 # offsets so the whole play area jitters, then settles. Cheap and works on
 # every platform (no shader required).
@@ -633,6 +663,8 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_settle_payment(payload)
 		NetProtocol.KIND_NUDGE:
 			_apply_nudge(payload)
+		NetProtocol.KIND_SPLASH:
+			_apply_splash(payload)
 		NetProtocol.KIND_REQUEST_DECK:
 			_on_deck_requested()
 		_:

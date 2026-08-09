@@ -45,6 +45,9 @@ const KIND_REFUSE := "refuse"
 const KIND_RESOLVE := "resolve"
 const KIND_SETTLE_PAYMENT := "settle_payment"
 const KIND_NUDGE := "nudge"
+# Splash is the visual sibling to Nudge — spawns the ripple SplashEffect on
+# the remote peer's screen. Same "ping the other player" idea, different vibe.
+const KIND_SPLASH := "splash"
 const KIND_END_TURN := "end_turn"
 # Guest→Host: "please (re-)send me the deck_init payload." Sent when the
 # guest's GameScreen finishes wiring up and is waiting on the initial deal.
