@@ -17,9 +17,10 @@ extends RefCounted
 #                       "leastAmountMoves": int } ] }
 #   `highestRent` is the single largest rent payment that player received
 #   during the match (max of a single settlement total, not the sum).
-#   `leastAmountMoves` is that player's total moves this match (banks, lays,
-#   attaches, action plays, Ride the Current draws). Leaderboard aggregates
-#   as a MIN across matches — the player's fewest-moves game.
+#   `leastAmountMoves` is only sent for the MATCH WINNER — it's their total
+#   moves that match (banks, lays, attaches, action plays, Ride the Current
+#   draws). The loser's entry omits the key. Leaderboard aggregates as a MIN
+#   across matches, so it reads as "fewest moves needed to win a match".
 #   The GET returns the same schema per match; the leaderboard aggregates
 #   `highestRent` as a MAX across matches (biggest-ever rent per player)
 #   and `leastAmountMoves` as a MIN (fewest-moves-in-a-single-match).

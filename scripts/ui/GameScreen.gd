@@ -1147,14 +1147,20 @@ func _post_match_summary() -> void:
 	var players_payload: Array = []
 	for p in _gs.players:
 		var stats: Dictionary = _match_stats.get(p.id, {})
-		players_payload.append({
+		var entry := {
 			"name": _display_name_for(p.id),
 			"realms": p.completed_realm_count(),
 			"steals": int(stats.get("steals", 0)),
 			"tributes": int(stats.get("tributes", 0)),
 			"highestRent": int(stats.get("highest_rent", 0)),
-			"leastAmountMoves": int(stats.get("moves", 0)),
-		})
+		}
+		# `leastAmountMoves` only carries the WINNER's move count for that
+		# match — the leaderboard tracks "fewest moves to win", so a losing
+		# player's count is irrelevant and would poison the server-side MIN
+		# aggregation if it were smaller. Loser's entry omits the key.
+		if p.id == winner_id:
+			entry["leastAmountMoves"] = int(stats.get("moves", 0))
+		players_payload.append(entry)
 	var payload := {
 		"endedAt": MatchApi.iso_utc_now(),
 		"turns": _turns_played,
