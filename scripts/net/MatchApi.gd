@@ -28,10 +28,12 @@ const GET_URL := BASE_URL + "/leaderboard"
 const SECRET := "2dd527d8e29ecf9deeace5dead9397f1e8920d2e209888b0899e94fcc5bdcf79"
 
 static func _get_headers() -> PackedStringArray:
+	# /leaderboard is public; keep the request "CORS simple" (only safelisted
+	# headers) so the browser skips the preflight. Adding X-Api-Key/Authorization
+	# forces a preflight the server's Access-Control-Allow-Headers doesn't
+	# whitelist, and the web build's fetch fails silently.
 	return PackedStringArray([
 		"Accept: application/json",
-		"X-Api-Key: %s" % SECRET,
-		"Authorization: Bearer %s" % SECRET,
 	])
 
 # POST /matches requires an HMAC signature over "<unix_seconds>.<raw_body>"
