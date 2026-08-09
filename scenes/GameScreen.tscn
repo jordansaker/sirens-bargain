@@ -855,3 +855,83 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Accept"
 theme_override_font_sizes/font_size = 13
+
+[node name="QuitConfirmScrim" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.7)
+mouse_filter = 0
+
+[node name="QuitConfirmPanel" type="Panel" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -110.0
+offset_right = 220.0
+offset_bottom = 110.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="QuitConfirmMargin" type="MarginContainer" parent="QuitConfirmPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="QuitConfirmVBox" type="VBoxContainer" parent="QuitConfirmPanel/QuitConfirmMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="QuitConfirmTitle" type="Label" parent="QuitConfirmPanel/QuitConfirmMargin/QuitConfirmVBox"]
+layout_mode = 2
+text = "Quit game?"
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.788, 0.635, 0.153, 1)
+
+[node name="QuitConfirmBody" type="Label" parent="QuitConfirmPanel/QuitConfirmMargin/QuitConfirmVBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "Any progress in this match will be lost."
+autowrap_mode = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 13
+theme_override_colors/font_color = Color(0.949, 0.964, 0.960, 1)
+
+[node name="QuitConfirmActions" type="HBoxContainer" parent="QuitConfirmPanel/QuitConfirmMargin/QuitConfirmVBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QuitCancelButton" type="Button" parent="QuitConfirmPanel/QuitConfirmMargin/QuitConfirmVBox/QuitConfirmActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"
+theme_override_font_sizes/font_size = 13
+
+[node name="QuitConfirmButton" type="Button" parent="QuitConfirmPanel/QuitConfirmMargin/QuitConfirmVBox/QuitConfirmActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Quit"
+theme_override_font_sizes/font_size = 13

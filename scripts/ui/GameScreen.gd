@@ -86,6 +86,13 @@ const CH_INK_ON_GOLD := Color("2A1F07")
 @onready var _refusal_cards_row: HBoxContainer = %RefusalCardsRow
 @onready var _refuse_button: Button = %RefuseButton
 @onready var _accept_button: Button = %AcceptButton
+# "Quit to menu — are you sure?" confirmation, gates the top-bar back button
+# so a mis-tap during a match doesn't dump the player back to the main menu.
+@onready var _quit_confirm_scrim: ColorRect = %QuitConfirmScrim
+@onready var _quit_confirm_panel: Panel = %QuitConfirmPanel
+@onready var _quit_confirm_body: Label = %QuitConfirmBody
+@onready var _quit_cancel_button: Button = %QuitCancelButton
+@onready var _quit_confirm_button: Button = %QuitConfirmButton
 
 signal _refusal_answered(refuse: bool)
 # Emitted by the payment picker (confirm → cards, close → null → auto-fallback).
@@ -222,6 +229,7 @@ func _ready() -> void:
 	_hide_card_peek()
 	_hide_game_over()
 	_hide_refusal_modal()
+	_hide_quit_confirm()
 	if _waiting_for_deck_init:
 		_prompt("Waiting for host to deal…")
 		_kick_off_deck_request()
@@ -355,6 +363,8 @@ func _wire_signals() -> void:
 	_menu_cancel.pressed.connect(_on_menu_cancel_pressed)
 	_peek_close.pressed.connect(_on_peek_close_pressed)
 	_to_menu_button.pressed.connect(_on_to_menu_pressed)
+	_quit_cancel_button.pressed.connect(_hide_quit_confirm)
+	_quit_confirm_button.pressed.connect(_on_quit_confirm_pressed)
 	_fan_button.toggled.connect(_on_fan_toggled)
 	_zoom_button.toggled.connect(_on_zoom_toggled)
 	_nudge_button.pressed.connect(_on_nudge_pressed)
@@ -619,8 +629,31 @@ func _on_background_gui_input(event: InputEvent) -> void:
 			_on_menu_cancel_pressed()
 
 func _on_to_menu_pressed() -> void:
-	# Bail to the main menu mid-match. Online sessions get torn down so the
-	# other peer sees a proper disconnect.
+	# Open the "are you sure?" gate instead of bailing straight to the menu —
+	# a mis-tap on the top-bar back button used to wipe an in-progress match
+	# with no undo. Actual quit happens in _on_quit_confirm_pressed.
+	_show_quit_confirm()
+
+func _show_quit_confirm() -> void:
+	if _quit_confirm_body != null:
+		# Warn HvH players that quitting drops their opponent too — the
+		# offline vs-AI case just discards the local match.
+		_quit_confirm_body.text = ("Any progress in this match will be lost, and your opponent will be disconnected."
+			if _is_online else "Any progress in this match will be lost.")
+	if _quit_confirm_scrim != null:
+		_quit_confirm_scrim.visible = true
+	if _quit_confirm_panel != null:
+		_quit_confirm_panel.visible = true
+
+func _hide_quit_confirm() -> void:
+	if _quit_confirm_panel != null:
+		_quit_confirm_panel.visible = false
+	if _quit_confirm_scrim != null:
+		_quit_confirm_scrim.visible = false
+
+func _on_quit_confirm_pressed() -> void:
+	# The user confirmed — actually bail. Online sessions get torn down so
+	# the other peer sees a proper disconnect.
 	var ns := get_tree().root.get_node_or_null("NetSession")
 	if ns != null and ns.has_method("reset"):
 		ns.reset()
