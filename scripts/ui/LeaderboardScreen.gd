@@ -408,10 +408,17 @@ func _build_compare_panel(totals: Dictionary) -> PanelContainer:
 		var left_win: bool
 		var right_win: bool
 		if lower_is_better:
-			# If either side has never played (0), skip highlighting so a
-			# fresh roster doesn't look like everyone is winning at zero.
-			if a <= 0 or b <= 0:
+			# 0 = "no wins yet" for that player, treat as no data. If both
+			# sides are 0 nothing is highlighted; if one is 0 the other
+			# wins by default; otherwise the smaller value wins.
+			if a == 0 and b == 0:
 				left_win = false
+				right_win = false
+			elif a == 0:
+				left_win = false
+				right_win = true
+			elif b == 0:
+				left_win = true
 				right_win = false
 			else:
 				left_win = a <= b
