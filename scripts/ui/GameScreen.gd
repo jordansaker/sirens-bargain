@@ -3304,7 +3304,10 @@ static func _modifier_display_name(m: CardData) -> String:
 # row. Closes the peek and enters SELECT_MODIFIER_DEST, popping the chips
 # of every legal destination realm on the local player's board.
 func _on_peek_modifier_selected(_card: CardData, mod: CardData, from_realm: String) -> void:
+	print("[Modifier] tapped in peek: mod=%s from=%s current_player=%d HUMAN=%d" \
+		% [mod.id, from_realm, _gs.current_player_index, HUMAN_ID])
 	if _gs.current_player_index != HUMAN_ID:
+		print("[Modifier] not your turn, bailing")
 		return
 	_hide_peek()
 	var human: PlayerState = _gs.players[HUMAN_ID]
