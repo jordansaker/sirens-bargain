@@ -97,8 +97,13 @@ static func post_match(host: Node, payload: Dictionary) -> void:
 # from the leaderboard response (or an empty array on any failure so callers
 # don't need to distinguish error paths). Each entry is a per-player
 # aggregate: {name, wins, losses, matches, winRate, totalRealms, totalSteals,
-# totalTributes, highestRent, lastMatchAt}. See LeaderboardResponse in the
-# server for the full TypeScript definition.
+# totalTributes, highestRent, leastAmountMoves, highestStreak, currentStreak,
+# lastMatchAt}. highestStreak = longest consecutive-win run ever; currentStreak
+# = wins in a row ending at the latest match (0 if their last match was a
+# loss). Response envelope also carries a top-level `currentStreakLeader`
+# {name, streak} that this helper currently discards — plumb it through if a
+# caller needs the global streak leader across all players. See
+# LeaderboardResponse in the server for the full TypeScript definition.
 static func fetch_leaderboard(host: Node, on_done: Callable) -> void:
 	if host == null or not host.is_inside_tree():
 		on_done.call([])

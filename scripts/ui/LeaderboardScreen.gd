@@ -30,7 +30,8 @@ const PLAYERS := [
 # Populated from MatchApi.fetch_leaderboard on _ready. Each entry is a
 # server-side per-player aggregate:
 #   {name, wins, losses, matches, winRate, totalRealms, totalSteals,
-#    totalTributes, highestRent, lastMatchAt}
+#    totalTributes, highestRent, leastAmountMoves, highestStreak,
+#    currentStreak, lastMatchAt}
 var _entries: Array = []
 var _loading: bool = true
 var _content_body: VBoxContainer = null
@@ -229,7 +230,8 @@ func _compute_totals() -> Dictionary:
 	var per: Dictionary = {}
 	for n in names:
 		per[n] = {"wins": 0, "realms": 0, "steals": 0, "tributes": 0,
-			"highest_rent": 0, "least_moves": 0, "win_rate": 0, "matches": 0}
+			"highest_rent": 0, "least_moves": 0, "win_rate": 0, "matches": 0,
+			"best_streak": 0, "current_streak": 0}
 	for e in _entries:
 		if not (e is Dictionary):
 			continue
@@ -249,6 +251,11 @@ func _compute_totals() -> Dictionary:
 		slot["highest_rent"] = int(e.get("highestRent", 0))
 		slot["least_moves"] = int(e.get("leastAmountMoves", 0))
 		slot["matches"] = int(e.get("matches", 0))
+		# highestStreak = longest consecutive-win run ever (all-time record).
+		# currentStreak = wins in a row ending at the latest match; 0 if the
+		# last match was a loss.
+		slot["best_streak"] = int(e.get("highestStreak", 0))
+		slot["current_streak"] = int(e.get("currentStreak", 0))
 		# Server returns winRate as 0..1; the UI treats it as an integer
 		# percent so scale here.
 		slot["win_rate"] = int(round(float(e.get("winRate", 0.0)) * 100.0))
@@ -273,12 +280,18 @@ func _build_versus_header(totals: Dictionary) -> HBoxContainer:
 	var b_wins := int(per[b_name]["wins"])
 	var leader := a_name if a_wins >= b_wins else b_name
 
-	row.add_child(_build_vp(PLAYERS[0], leader == a_name))
+	# Current streak points at whichever player has currentStreak > 0 (the
+	# one who won the latest match). At most one side is >0 in a 2P history —
+	# a fresh loss zeroes yours — but pass both so the render function stays
+	# side-agnostic.
+	var a_streak := int(per[a_name]["current_streak"])
+	var b_streak := int(per[b_name]["current_streak"])
+	row.add_child(_build_vp(PLAYERS[0], leader == a_name, a_streak))
 	row.add_child(_build_score_block(a_wins, b_wins, int(totals["games"])))
-	row.add_child(_build_vp(PLAYERS[1], leader == b_name))
+	row.add_child(_build_vp(PLAYERS[1], leader == b_name, b_streak))
 	return row
 
-func _build_vp(player: Dictionary, is_leader: bool) -> VBoxContainer:
+func _build_vp(player: Dictionary, is_leader: bool, current_streak: int = 0) -> VBoxContainer:
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", 6)
@@ -339,6 +352,35 @@ func _build_vp(player: Dictionary, is_leader: bool) -> VBoxContainer:
 	name_lbl.add_theme_color_override("font_color", LB_PEARL)
 	col.add_child(name_lbl)
 
+	# Streak pill under the name so the header itself points at whoever's
+	# currently on a run. The CURRENT STREAK compare row also shows the
+	# raw numbers side-by-side; this pill is the at-a-glance version.
+	if current_streak > 0:
+		var pill := PanelContainer.new()
+		pill.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		var pill_sb := StyleBoxFlat.new()
+		pill_sb.bg_color = Color(LB_GOLD.r, LB_GOLD.g, LB_GOLD.b, 0.18)
+		pill_sb.border_color = LB_GOLD_LT
+		pill_sb.border_width_left = 1
+		pill_sb.border_width_right = 1
+		pill_sb.border_width_top = 1
+		pill_sb.border_width_bottom = 1
+		pill_sb.corner_radius_top_left = 8
+		pill_sb.corner_radius_top_right = 8
+		pill_sb.corner_radius_bottom_left = 8
+		pill_sb.corner_radius_bottom_right = 8
+		pill_sb.content_margin_left = 8
+		pill_sb.content_margin_right = 8
+		pill_sb.content_margin_top = 2
+		pill_sb.content_margin_bottom = 2
+		pill.add_theme_stylebox_override("panel", pill_sb)
+		var pill_lbl := Label.new()
+		pill_lbl.text = "%d in a row" % current_streak
+		pill_lbl.add_theme_font_size_override("font_size", 10)
+		pill_lbl.add_theme_color_override("font_color", LB_GOLD_LT)
+		pill.add_child(pill_lbl)
+		col.add_child(pill)
+
 	return col
 
 func _build_score_block(a_wins: int, b_wins: int, games: int) -> VBoxContainer:
@@ -396,6 +438,8 @@ func _build_compare_panel(totals: Dictionary) -> PanelContainer:
 		["TRIBUTES", "tributes", "", false],
 		["HIGH RENT", "highest_rent", "", false],
 		["LEAST MOVES", "least_moves", "", true],
+		["BEST STREAK", "best_streak", "", false],
+		["CURRENT STREAK", "current_streak", "", false],
 	]
 	for i in range(rows.size()):
 		var spec: Array = rows[i]
