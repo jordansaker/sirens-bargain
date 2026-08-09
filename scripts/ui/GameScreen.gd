@@ -1071,7 +1071,12 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 		pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		head.add_child(pill)
 
-	# 5-stat grid: REALMS, PEARLS, STEALS, TRIBUTES, HIGH RENT.
+	# 6-stat grid: REALMS, PEARLS, STEALS, TRIBUTES, HIGH RENT, MOVES.
+	# MOVES = every discrete play this match (banks, lays, attaches, action
+	# plays, Ride the Current draws). Pairs with HIGH RENT as an efficiency
+	# read — fewer moves for the same realms/pearls = tighter play.
+	# Aggregated as MIN across matches in the leaderboard's
+	# leastAmountMoves field; per-game we show the raw count.
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 6)
 	col.add_child(stats)
@@ -1082,6 +1087,7 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 		{"v": int(pstats.get("steals", 0)), "l": "STEALS"},
 		{"v": int(pstats.get("tributes", 0)), "l": "TRIBUTES"},
 		{"v": int(pstats.get("highest_rent", 0)), "l": "HIGH RENT"},
+		{"v": int(pstats.get("moves", 0)), "l": "MOVES"},
 	]:
 		stats.add_child(_build_stat_cell(spec["v"], spec["l"]))
 	return card
