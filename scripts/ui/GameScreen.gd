@@ -80,6 +80,10 @@ const CH_INK_ON_GOLD := Color("2A1F07")
 @onready var _refusal_panel: Panel = %RefusalPanel
 @onready var _refusal_title: Label = %RefusalTitle
 @onready var _refusal_body: Label = %RefusalBody
+# Card-art preview strip inside the refusal modal — pre-declared in the scene
+# (not built at runtime) so opening the modal never mutates the tree. Empty
+# for tribute-family actions where there's no specific card to show.
+@onready var _refusal_cards_row: HBoxContainer = %RefusalCardsRow
 @onready var _refuse_button: Button = %RefuseButton
 @onready var _accept_button: Button = %AcceptButton
 
@@ -1217,6 +1221,7 @@ func _prompt_human_refusal(target_id: int, pending: PendingAction) -> bool:
 func _show_refusal_modal(pending: PendingAction) -> void:
 	_refusal_title.text = "%s is playing an action on you" % OPPONENT_NAME
 	_refusal_body.text = _describe_pending_for_refusal(pending)
+	_populate_refusal_cards_row(pending)
 	_refusal_scrim.visible = true
 	_refusal_panel.visible = true
 
@@ -1225,6 +1230,67 @@ func _hide_refusal_modal() -> void:
 		_refusal_panel.visible = false
 	if _refusal_scrim != null:
 		_refusal_scrim.visible = false
+	# Drop the mini CardViews so their textures release — the modal doesn't
+	# need to keep them around while it's hidden.
+	if _refusal_cards_row != null:
+		for child in _refusal_cards_row.get_children():
+			child.queue_free()
+		_refusal_cards_row.visible = false
+
+# Fill the pre-declared RefusalCardsRow with mini CardViews for the card(s)
+# or set being targeted. Row visibility is toggled based on whether there's
+# anything to show — tribute-family actions show nothing (body text already
+# spells out the amount owed).
+func _populate_refusal_cards_row(pending: PendingAction) -> void:
+	if _refusal_cards_row == null:
+		return
+	for child in _refusal_cards_row.get_children():
+		child.queue_free()
+	var cards := _refusal_preview_cards(pending)
+	if cards.is_empty():
+		_refusal_cards_row.visible = false
+		return
+	# Mini scale so the whole row fits the modal. Preserve aspect ratio of
+	# the real CardView so art doesn't stretch.
+	var mini_w := 80
+	var mini_h := int(round(float(mini_w) * float(CardView.HEIGHT) / float(CardView.WIDTH)))
+	for c in cards:
+		var view := CardView.new()
+		view.custom_minimum_size = Vector2(mini_w, mini_h)
+		view.card = c
+		_refusal_cards_row.add_child(view)
+	_refusal_cards_row.visible = true
+
+func _refusal_preview_cards(pending: PendingAction) -> Array:
+	var out: Array = []
+	if pending == null:
+		return out
+	match pending.kind:
+		"krakens_grasp":
+			# Show the entire set being stolen.
+			var realm: String = String(pending.payload.get("realm_name", ""))
+			var target_id: int = pending.targets[0] if not pending.targets.is_empty() else -1
+			if target_id >= 0 and not realm.is_empty():
+				var victim: PlayerState = _gs.players[target_id]
+				var stack: Array = victim.realms.get(realm, [])
+				for c in stack:
+					if c is CardData:
+						out.append(c)
+		"slippery_eel":
+			# The single loose card being taken.
+			var c: Variant = pending.payload.get("stolen_card")
+			if c is CardData:
+				out.append(c)
+		"trade_winds":
+			# Victim's card first ("losing THIS"), then attacker's ("for THAT").
+			# From the initiator's payload: their_card = the victim's, own_card = attacker's.
+			var yours: Variant = pending.payload.get("their_card")
+			var theirs: Variant = pending.payload.get("own_card")
+			if yours is CardData:
+				out.append(yours)
+			if theirs is CardData:
+				out.append(theirs)
+	return out
 
 static func _describe_pending_for_refusal(pending: PendingAction) -> String:
 	match pending.kind:

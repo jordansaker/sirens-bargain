@@ -787,10 +787,10 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -220.0
-offset_top = -140.0
-offset_right = 220.0
-offset_bottom = 140.0
+offset_left = -230.0
+offset_top = -200.0
+offset_right = 230.0
+offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
 
@@ -828,6 +828,13 @@ horizontal_alignment = 1
 vertical_alignment = 1
 theme_override_font_sizes/font_size = 13
 theme_override_colors/font_color = Color(0.949, 0.964, 0.960, 1)
+
+[node name="RefusalCardsRow" type="HBoxContainer" parent="RefusalPanel/RefusalMargin/RefusalVBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
 
 [node name="RefusalActions" type="HBoxContainer" parent="RefusalPanel/RefusalMargin/RefusalVBox"]
 layout_mode = 2
