@@ -13,9 +13,13 @@ extends RefCounted
 #     "turns":      int,
 #     "winner":     <name in players[]>,
 #     "players":    [ { "name": str, "realms": int, "steals": int,
-#                       "tributes": int, "highestRent": int } ] }
+#                       "tributes": int, "highestRent": int,
+#                       "leastAmountMoves": int } ] }
 #   `highestRent` is the single largest rent payment that player received
 #   during the match (max of a single settlement total, not the sum).
+#   `leastAmountMoves` is that player's total moves this match (banks, lays,
+#   attaches, action plays, Ride the Current draws). Leaderboard aggregates
+#   as a MIN across matches — the player's fewest-moves game.
 #   The GET returns the same schema per match; the leaderboard aggregates
 #   `highestRent` as a MAX across matches (biggest-ever rent per player).
 

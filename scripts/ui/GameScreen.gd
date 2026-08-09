@@ -280,11 +280,21 @@ func _init_match_stats() -> void:
 	if _gs == null:
 		return
 	for p in _gs.players:
-		_match_stats[p.id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
+		_match_stats[p.id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0}
 
 func _track_play_for_stats(actor_id: int, text: String) -> void:
 	if not _match_stats.has(actor_id):
-		_match_stats[actor_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
+		_match_stats[actor_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0}
+	# Count every log line that represents a play consuming a play-slot.
+	# Excludes reactive lines (refused, took/swapped resolves), payments,
+	# tribute-resolve amounts, and passive draws. Cottage/palace moves
+	# between complete sets are free so also skipped ("Moved …").
+	if text.begins_with("banked ") \
+			or text.begins_with("laid ") \
+			or text.begins_with("attached ") \
+			or text.begins_with("played ") \
+			or text.begins_with("drew 2 (Ride the Current)"):
+		_match_stats[actor_id]["moves"] += 1
 	# Outcome-phase resolves: "took X from PY (Slippery Eel)" /
 	# "(Kraken's Grasp)" — count as one steal for the actor.
 	if text.find("(Slippery Eel)") != -1 or text.find("(Kraken's Grasp)") != -1:
@@ -297,7 +307,7 @@ func _track_play_for_stats(actor_id: int, text: String) -> void:
 
 func _track_payment_for_stats(_payer_id: int, receiver_id: int, total: int, _card_count: int) -> void:
 	if not _match_stats.has(receiver_id):
-		_match_stats[receiver_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0}
+		_match_stats[receiver_id] = {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0}
 	_match_stats[receiver_id]["pearls"] += total
 	# Track the single biggest rent collected — one payment total, not the
 	# running sum. Used both in the game-over card and in the API payload.
@@ -1050,7 +1060,7 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 6)
 	col.add_child(stats)
-	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0})
+	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0})
 	for spec in [
 		{"v": player.completed_realm_count(), "l": "REALMS"},
 		{"v": int(pstats.get("pearls", 0)), "l": "PEARLS"},
@@ -1143,6 +1153,7 @@ func _post_match_summary() -> void:
 			"steals": int(stats.get("steals", 0)),
 			"tributes": int(stats.get("tributes", 0)),
 			"highestRent": int(stats.get("highest_rent", 0)),
+			"leastAmountMoves": int(stats.get("moves", 0)),
 		})
 	var payload := {
 		"endedAt": MatchApi.iso_utc_now(),
