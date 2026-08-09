@@ -4070,9 +4070,12 @@ static func _find_refusal_in_hand(player: PlayerState) -> CardData:
 func _prompt_local_refusal(pending: PendingAction) -> bool:
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	if _find_refusal_in_hand(human) == null:
+		print("[Refusal] prompt_local_refusal: HUMAN_ID=%d has no refusal in hand → skip" % HUMAN_ID)
 		return false
+	print("[Refusal] showing modal for kind=%s" % pending.kind)
 	_show_refusal_modal(pending)
 	var choice: bool = await _refusal_answered
+	print("[Refusal] modal answered choice=%s" % str(choice))
 	_hide_refusal_modal()
 	return choice
 
@@ -4109,15 +4112,20 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 	while true:
 		var pa: PendingAction = _gs.pending_action
 		if pa == null:
+			print("[Refusal] cycle: pending_action is null → cancelled")
 			return "cancelled"
 		var next_refuser: int = pa.next_refuser_for(target_id)
 		var refuser: PlayerState = _gs.players[next_refuser]
 		var refusal_card := _find_refusal_in_hand(refuser)
+		print("[Refusal] cycle target=%d HUMAN=%d next_refuser=%d has_card=%s kind=%s" \
+			% [target_id, HUMAN_ID, next_refuser, str(refusal_card != null), pa.kind])
 		if next_refuser == HUMAN_ID:
 			if refusal_card == null:
 				# Can't refuse — resolve.
+				print("[Refusal] no card in local hand → auto-resolve")
 				await _apply_resolve_locally_and_broadcast()
 				return "resolved"
+			print("[Refusal] prompting local for kind=%s" % pa.kind)
 			var wants: bool = await _prompt_local_refusal(pa)
 			if wants:
 				_tm.refuse(target_id, HUMAN_ID, refusal_card)
@@ -4300,8 +4308,16 @@ func _apply_initiate_tribute(payload: Dictionary) -> void:
 	var charger_realm := String(payload.get("charger_realm", ""))
 	var target_id := int(payload.get("target", -1))
 	var ht_id := String(payload.get("ht_id", ""))
+	print("[Refusal] apply_initiate_tribute actor=%d target=%d card_id=%s realm=%s" \
+		% [actor, target_id, card_id, charger_realm])
 	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
 	if card == null:
+		# Desync — attacker's mirror of the tribute card is missing on this
+		# peer. Would silently break the whole refusal window: attacker keeps
+		# awaiting a remote decision that never comes. Log loud so it's
+		# obvious in the browser console.
+		print("[Refusal] DESYNC: tribute card_id=%s not in players[%d].hand" \
+			% [card_id, actor])
 		return
 	var ht_card: CardData = null
 	if not ht_id.is_empty():
