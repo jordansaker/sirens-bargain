@@ -53,6 +53,11 @@ const KIND_END_TURN := "end_turn"
 # guest's GameScreen finishes wiring up and is waiting on the initial deal.
 # Idempotent — the host just re-serialises current game_state.
 const KIND_REQUEST_DECK := "request_deck"
+# Either→Either: "I clicked Rematch — reload the GameScreen." Handshake with
+# KIND_REQUEST_DECK: the guest still asks for the initial deal once their
+# fresh scene is up, host still responds; RESTART just makes sure BOTH peers
+# are on fresh scenes before that dance starts.
+const KIND_RESTART := "restart"
 
 # Serialise a GameState + starting hands into a deck_init payload. Called
 # once by the host at match start; the guest applies via `apply_deck_init`.

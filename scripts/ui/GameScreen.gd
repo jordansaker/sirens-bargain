@@ -678,6 +678,8 @@ func _on_net_event(payload: Dictionary) -> void:
 			_apply_splash(payload)
 		NetProtocol.KIND_REQUEST_DECK:
 			_on_deck_requested()
+		NetProtocol.KIND_RESTART:
+			_on_restart_requested()
 		_:
 			# Unknown event — log for debugging.
 			_append_log("[color=#e88][unknown event %s][/color]" % kind)
@@ -690,7 +692,20 @@ func _on_deck_requested() -> void:
 		return
 	if _gs == null or _net_client == null:
 		return
+	# If our _gs already ended (previous match), refuse to respond with the
+	# stale state. Fires on rematch when the guest's fresh REQUEST beats
+	# our own scene reload: without this guard we'd send the finished game
+	# and the guest would rebuild that instead of starting a new match.
+	# The guest's retry timer keeps asking until our fresh scene answers.
+	if _gs.is_game_over():
+		return
 	_net_client.send(NetProtocol.build_deck_init(_gs, _deck_init_seed))
+
+# Peer clicked Rematch — mirror the reload here so both peers arrive on
+# fresh scenes and the deck-request handshake produces a fresh deal instead
+# of re-serialising the finished game.
+func _on_restart_requested() -> void:
+	get_tree().change_scene_to_file("res://scenes/GameScreen.tscn")
 
 # Guest: send a deck_init request now and re-send every ~700ms until we get
 # a deck_init back. Handles the rematch race where the host's new scene
@@ -1181,6 +1196,14 @@ func _hide_game_over() -> void:
 		_game_over_scrim.visible = false
 
 func _on_play_again_pressed() -> void:
+	# In HvH, tell the other peer to reload too — otherwise their scene
+	# stays on the game-over dialog with a stale (game_over) _gs, and when
+	# our fresh scene asks for a deck_init they'd send that stale state.
+	# Broadcast BEFORE change_scene_to_file: signal handlers on the outgoing
+	# scene are torn down as part of the reload, so the send has to happen
+	# while we're still attached.
+	if _is_online:
+		_broadcast({"kind": NetProtocol.KIND_RESTART, "actor": HUMAN_ID})
 	# Reload the GameScreen scene — cleanest way to reset all state including
 	# the RNG-driven initial deal.
 	get_tree().change_scene_to_file("res://scenes/GameScreen.tscn")
