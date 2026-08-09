@@ -80,10 +80,6 @@ const CH_INK_ON_GOLD := Color("2A1F07")
 @onready var _refusal_panel: Panel = %RefusalPanel
 @onready var _refusal_title: Label = %RefusalTitle
 @onready var _refusal_body: Label = %RefusalBody
-# Lazy-built row for card-art previews of the card/set being stolen — sits
-# between the title and the body text so the player can see EXACTLY what's
-# on the line before deciding to burn a Siren's Refusal.
-var _refusal_cards_row: HBoxContainer = null
 @onready var _refuse_button: Button = %RefuseButton
 @onready var _accept_button: Button = %AcceptButton
 
@@ -1206,7 +1202,6 @@ func _prompt_human_refusal(target_id: int, pending: PendingAction) -> bool:
 func _show_refusal_modal(pending: PendingAction) -> void:
 	_refusal_title.text = "%s is playing an action on you" % OPPONENT_NAME
 	_refusal_body.text = _describe_pending_for_refusal(pending)
-	_populate_refusal_cards_row(pending)
 	_refusal_scrim.visible = true
 	_refusal_panel.visible = true
 
@@ -1215,82 +1210,6 @@ func _hide_refusal_modal() -> void:
 		_refusal_panel.visible = false
 	if _refusal_scrim != null:
 		_refusal_scrim.visible = false
-	# Free the CardView previews so their textures release — the modal
-	# doesn't need to keep them around while it's hidden.
-	if _refusal_cards_row != null:
-		for child in _refusal_cards_row.get_children():
-			child.queue_free()
-		_refusal_cards_row.visible = false
-
-# Build the card-art preview row on first use. Sits just below the title.
-func _ensure_refusal_cards_row() -> void:
-	if _refusal_cards_row != null:
-		return
-	if _refusal_panel == null:
-		return
-	var vbox := _refusal_panel.get_node_or_null("RefusalMargin/RefusalVBox") as VBoxContainer
-	if vbox == null:
-		return
-	_refusal_cards_row = HBoxContainer.new()
-	_refusal_cards_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_refusal_cards_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(_refusal_cards_row)
-	var title := vbox.get_node_or_null("RefusalTitle")
-	if title != null:
-		vbox.move_child(_refusal_cards_row, title.get_index() + 1)
-
-# Populate the preview row with mini CardViews of the exact card(s) or set
-# being targeted. Empty for tribute-family actions (no specific card art to
-# show — the body text already spells out the amount owed).
-func _populate_refusal_cards_row(pending: PendingAction) -> void:
-	_ensure_refusal_cards_row()
-	if _refusal_cards_row == null:
-		return
-	for child in _refusal_cards_row.get_children():
-		child.queue_free()
-	var cards := _refusal_preview_cards(pending)
-	_refusal_cards_row.visible = not cards.is_empty()
-	if cards.is_empty():
-		return
-	# Scale each card down to fit inside the modal — CardView.WIDTH/HEIGHT
-	# (180×252) is way too big for a dialog. Preserve aspect ratio.
-	var mini_w := 96
-	var mini_h := int(round(float(mini_w) * float(CardView.HEIGHT) / float(CardView.WIDTH)))
-	for c in cards:
-		var view := CardView.new()
-		view.custom_minimum_size = Vector2(mini_w, mini_h)
-		view.card = c
-		_refusal_cards_row.add_child(view)
-
-func _refusal_preview_cards(pending: PendingAction) -> Array:
-	var out: Array = []
-	if pending == null:
-		return out
-	match pending.kind:
-		"krakens_grasp":
-			var realm: String = String(pending.payload.get("realm_name", ""))
-			var target_id: int = pending.targets[0] if not pending.targets.is_empty() else -1
-			if target_id >= 0 and not realm.is_empty():
-				var victim: PlayerState = _gs.players[target_id]
-				var stack: Array = victim.realms.get(realm, [])
-				for c in stack:
-					if c is CardData:
-						out.append(c)
-		"slippery_eel":
-			var c: Variant = pending.payload.get("stolen_card")
-			if c is CardData:
-				out.append(c)
-		"trade_winds":
-			# their_card = the victim's card being taken; own_card = the
-			# attacker's card being handed over. Show victim's card first so
-			# the modal reads "losing THIS in exchange for THAT".
-			var yours: Variant = pending.payload.get("their_card")
-			var theirs: Variant = pending.payload.get("own_card")
-			if yours is CardData:
-				out.append(yours)
-			if theirs is CardData:
-				out.append(theirs)
-	return out
 
 static func _describe_pending_for_refusal(pending: PendingAction) -> String:
 	match pending.kind:
@@ -4070,12 +3989,9 @@ static func _find_refusal_in_hand(player: PlayerState) -> CardData:
 func _prompt_local_refusal(pending: PendingAction) -> bool:
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	if _find_refusal_in_hand(human) == null:
-		print("[Refusal] prompt_local_refusal: HUMAN_ID=%d has no refusal in hand → skip" % HUMAN_ID)
 		return false
-	print("[Refusal] showing modal for kind=%s" % pending.kind)
 	_show_refusal_modal(pending)
 	var choice: bool = await _refusal_answered
-	print("[Refusal] modal answered choice=%s" % str(choice))
 	_hide_refusal_modal()
 	return choice
 
@@ -4112,20 +4028,15 @@ func _refusal_cycle_for_target(target_id: int) -> String:
 	while true:
 		var pa: PendingAction = _gs.pending_action
 		if pa == null:
-			print("[Refusal] cycle: pending_action is null → cancelled")
 			return "cancelled"
 		var next_refuser: int = pa.next_refuser_for(target_id)
 		var refuser: PlayerState = _gs.players[next_refuser]
 		var refusal_card := _find_refusal_in_hand(refuser)
-		print("[Refusal] cycle target=%d HUMAN=%d next_refuser=%d has_card=%s kind=%s" \
-			% [target_id, HUMAN_ID, next_refuser, str(refusal_card != null), pa.kind])
 		if next_refuser == HUMAN_ID:
 			if refusal_card == null:
 				# Can't refuse — resolve.
-				print("[Refusal] no card in local hand → auto-resolve")
 				await _apply_resolve_locally_and_broadcast()
 				return "resolved"
-			print("[Refusal] prompting local for kind=%s" % pa.kind)
 			var wants: bool = await _prompt_local_refusal(pa)
 			if wants:
 				_tm.refuse(target_id, HUMAN_ID, refusal_card)
@@ -4308,16 +4219,8 @@ func _apply_initiate_tribute(payload: Dictionary) -> void:
 	var charger_realm := String(payload.get("charger_realm", ""))
 	var target_id := int(payload.get("target", -1))
 	var ht_id := String(payload.get("ht_id", ""))
-	print("[Refusal] apply_initiate_tribute actor=%d target=%d card_id=%s realm=%s" \
-		% [actor, target_id, card_id, charger_realm])
 	var card := NetProtocol.find_in_hand(_gs.players[actor], card_id)
 	if card == null:
-		# Desync — attacker's mirror of the tribute card is missing on this
-		# peer. Would silently break the whole refusal window: attacker keeps
-		# awaiting a remote decision that never comes. Log loud so it's
-		# obvious in the browser console.
-		print("[Refusal] DESYNC: tribute card_id=%s not in players[%d].hand" \
-			% [card_id, actor])
 		return
 	var ht_card: CardData = null
 	if not ht_id.is_empty():
