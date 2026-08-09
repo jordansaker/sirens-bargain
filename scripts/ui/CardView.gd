@@ -24,6 +24,15 @@ const LIFT_PX := 24
 
 const BANNER_HEIGHT := 32
 
+# Opt-in for the tap-and-drag input model. When false (default), a mouse-down
+# fires `selected` immediately — original snappy behaviour used for every
+# non-hand context (realm peeks, modifier picker, mini previews, discard
+# viewer). When true, `selected` is deferred to mouse-up and suppressed if
+# the pointer moved past _DRAG_THRESHOLD_PX so hand cards can be dragged to
+# reorder without every jittery tap being swallowed. Only GameScreen's hand
+# fan flips this on.
+var drag_enabled: bool = false
+
 var card: CardData:
 	set(value):
 		if card == value:
@@ -242,10 +251,20 @@ var _dragging: bool = false
 func _on_gui_input(event: InputEvent) -> void:
 	# Only listen to mouse events — `emulate_mouse_from_touch` is on in
 	# project settings so touches on mobile already fire here as
-	# InputEventMouseButton. We disambiguate tap vs drag by tracking press
-	# position: exceed the threshold before release → drag; release before
-	# threshold → tap-select. This lets the hand-fan support drag-to-reorder
-	# without stealing the fast single-tap selection path.
+	# InputEventMouseButton.
+	if not drag_enabled:
+		# Legacy path: fire `selected` on mouse-down. Used everywhere except
+		# the hand fan — modifier picker, peek pickers, discard viewer, etc.
+		# Those never move mid-tap and don't need drag detection; keeping
+		# them on mouse-down means a jittery finger doesn't swallow the tap.
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				selected.emit(card)
+		return
+	# Drag-aware path (hand fan only): disambiguate tap vs drag by tracking
+	# press position — exceed the threshold before release → drag; release
+	# before threshold → tap-select.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index != MOUSE_BUTTON_LEFT:

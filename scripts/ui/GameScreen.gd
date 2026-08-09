@@ -804,9 +804,7 @@ func _apply_reassign_wild(payload: Dictionary) -> void:
 # modifier stack, look it up there and apply the move on the mirror.
 func _apply_move_modifier(payload: Dictionary) -> void:
 	var actor: int = int(payload.get("actor", -1))
-	print("[Modifier] _apply_move_modifier remote: actor=%d payload=%s" % [actor, str(payload)])
 	if actor < 0:
-		print("[Modifier] apply: actor<0, bailing")
 		return
 	var player: PlayerState = _gs.players[actor]
 	var from_realm := String(payload.get("from", ""))
@@ -818,11 +816,8 @@ func _apply_move_modifier(payload: Dictionary) -> void:
 			card = m
 			break
 	if card == null:
-		print("[Modifier] apply: card_id=%s NOT FOUND in players[%d].modifiers_on(%s) — mirror desync" \
-			% [card_id, actor, from_realm])
 		return
-	var ok := player.move_modifier(card, from_realm, to_realm)
-	print("[Modifier] apply: move_modifier returned %s" % str(ok))
+	player.move_modifier(card, from_realm, to_realm)
 	_refresh_all()
 
 # Broadcast a local action to the opponent (no-op in vs-AI mode).
@@ -1469,6 +1464,11 @@ func _refresh_hand() -> void:
 	for c in human.hand:
 		var view := CardView.new()
 		view.card = c
+		# Hand fan is the only place that opts into drag-to-reorder. Every
+		# other CardView (peek modifier row, refusal preview, discard viewer,
+		# etc.) keeps the legacy mouse-down `selected` behaviour so a jittery
+		# tap can't be swallowed as a drag with no listener.
+		view.drag_enabled = true
 		var is_lifted := _is_hand_card_lifted(c)
 		view.selected_state = is_lifted
 		view.selected.connect(_on_hand_card_selected)
@@ -3303,10 +3303,7 @@ static func _modifier_display_name(m: CardData) -> String:
 # row. Closes the peek and enters SELECT_MODIFIER_DEST, popping the chips
 # of every legal destination realm on the local player's board.
 func _on_peek_modifier_selected(_card: CardData, mod: CardData, from_realm: String) -> void:
-	print("[Modifier] tapped in peek: mod=%s from=%s current_player=%d HUMAN=%d" \
-		% [mod.id, from_realm, _gs.current_player_index, HUMAN_ID])
 	if _gs.current_player_index != HUMAN_ID:
-		print("[Modifier] not your turn, bailing")
 		return
 	_hide_peek()
 	var human: PlayerState = _gs.players[HUMAN_ID]
@@ -3339,14 +3336,10 @@ func _on_peek_modifier_selected(_card: CardData, mod: CardData, from_realm: Stri
 
 func _do_move_modifier(mod: CardData, from_realm: String, to_realm: String) -> void:
 	var human: PlayerState = _gs.players[HUMAN_ID]
-	print("[Modifier] _do_move_modifier local: %s from=%s to=%s HUMAN=%d online=%s" \
-		% [mod.id, from_realm, to_realm, HUMAN_ID, str(_is_online)])
 	if not human.move_modifier(mod, from_realm, to_realm):
-		print("[Modifier] local move_modifier() returned FALSE — refused by PlayerState")
 		_prompt("Can't move %s there." % _modifier_display_name(mod))
 		_reset_to_idle()
 		return
-	print("[Modifier] local move applied, broadcasting")
 	_prompt("Moved %s from %s to %s." % [_modifier_display_name(mod), from_realm, to_realm])
 	_broadcast({
 		"kind": NetProtocol.KIND_MOVE_MODIFIER,
