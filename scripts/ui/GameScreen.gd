@@ -1268,13 +1268,12 @@ func _populate_refusal_cards_row(pending: PendingAction) -> void:
 	if cards.is_empty():
 		_refusal_cards_row.visible = false
 		return
-	# Mini scale so the whole row fits the modal. Preserve aspect ratio of
-	# the real CardView so art doesn't stretch.
-	var mini_w := 80
-	var mini_h := int(round(float(mini_w) * float(CardView.HEIGHT) / float(CardView.WIDTH)))
+	# Full-size CardView (180×252, matches hand cards) so the art reads
+	# exactly the same as the card you'd hold — no mental "shrink" step
+	# when scanning what's on the line. RefusalPanel is sized to fit up to
+	# 4 full-size cards (Kraken can pluck a complete realm set).
 	for c in cards:
 		var view := CardView.new()
-		view.custom_minimum_size = Vector2(mini_w, mini_h)
 		view.card = c
 		_refusal_cards_row.add_child(view)
 	_refusal_cards_row.visible = true
