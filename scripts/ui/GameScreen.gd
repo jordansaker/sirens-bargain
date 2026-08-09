@@ -1181,23 +1181,35 @@ func _open_refusal_window() -> void:
 	if pending == null:
 		return
 	for target_id in pending.targets.duplicate():
-		var target: PlayerState = _gs.players[target_id]
-		var refusal: CardData = null
-		for c in target.hand:
-			if c.action_effect == "sirens_refusal":
-				refusal = c
-				break
-		if refusal == null:
-			continue
+		await _refusal_cycle_offline(target_id)
+
+# Vs-AI refusal cycle. Loops so counter-refusals are unlimited per the rules:
+# defender refuses → initiator can counter → defender can counter that, and
+# on until whichever side is next either has no Refusal card or declines.
+# next_refuser_for toggles between target and initiator on stack parity, so
+# the same pending action alternates naturally.
+func _refusal_cycle_offline(target_id: int) -> void:
+	while true:
+		var pa: PendingAction = _gs.pending_action
+		if pa == null:
+			return
+		var next_refuser_id: int = pa.next_refuser_for(target_id)
+		var refuser: PlayerState = _gs.players[next_refuser_id]
+		var refusal_card := _find_refusal_in_hand(refuser)
+		if refusal_card == null:
+			return
 		var wants_refuse := false
-		if _ais.has(target_id):
-			var ai: AIOpponent = _ais[target_id]
-			wants_refuse = ai._wants_to_refuse(_gs, pending, target_id)
-		else:
-			# Human target (HvH mode, once we get there).
-			wants_refuse = await _prompt_human_refusal(target_id, pending)
-		if wants_refuse:
-			_tm.refuse(target_id, target_id, refusal)
+		if _ais.has(next_refuser_id):
+			var ai: AIOpponent = _ais[next_refuser_id]
+			wants_refuse = ai._wants_to_refuse(_gs, pa, target_id)
+		elif next_refuser_id == HUMAN_ID:
+			# _prompt_local_refusal doesn't gate on target vs initiator, so
+			# the same prompt handles both "you're the defender" and
+			# "opponent refused your action — counter?" cases.
+			wants_refuse = await _prompt_local_refusal(pa)
+		if not wants_refuse:
+			return
+		_tm.refuse(target_id, next_refuser_id, refusal_card)
 
 func _prompt_human_refusal(target_id: int, pending: PendingAction) -> bool:
 	# Only prompt when the human is the target and actually holds a refusal.

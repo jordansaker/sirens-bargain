@@ -454,23 +454,34 @@ func _run_refusal_window(tm: TurnManager, all_ais: Dictionary) -> void:
 	# Iterate targets in a stable order.
 	var targets: Array[int] = pending.targets.duplicate()
 	for target_id in targets:
-		var target: PlayerState = tm.game_state.players[target_id]
-		var target_ref := _find_action(target, "sirens_refusal")
-		if target_ref == null:
-			continue
+		await _refusal_cycle(tm, all_ais, target_id)
+
+# Per-target refusal cycle. Loops so counter-refusals chain unlimited per
+# the rules: defender refuses → initiator can counter → defender can counter
+# that, and on until whichever side is next either has no Refusal card or
+# declines. Greedy AI still returns false when asked to counter (heuristic
+# in _wants_to_refuse), so the loop closes quickly if AI is the one being
+# asked — but the human always gets a chance to counter.
+func _refusal_cycle(tm: TurnManager, all_ais: Dictionary, target_id: int) -> void:
+	while true:
+		var pa: PendingAction = tm.game_state.pending_action
+		if pa == null:
+			return
+		var next_refuser_id: int = pa.next_refuser_for(target_id)
+		var refuser: PlayerState = tm.game_state.players[next_refuser_id]
+		var refusal_card := _find_action(refuser, "sirens_refusal")
+		if refusal_card == null:
+			return
 		var wants_refuse := false
-		var target_ai_var: Variant = all_ais.get(target_id)
-		if target_ai_var != null:
-			var target_ai: AIOpponent = target_ai_var
-			wants_refuse = target_ai._wants_to_refuse(tm.game_state, pending, target_id)
+		var refuser_ai_var: Variant = all_ais.get(next_refuser_id)
+		if refuser_ai_var != null:
+			var refuser_ai: AIOpponent = refuser_ai_var
+			wants_refuse = refuser_ai._wants_to_refuse(tm.game_state, pa, target_id)
 		elif human_refusal_hook.is_valid():
-			# Human target — prompt via the coroutine hook. In headless AI-vs-AI
-			# matches this branch never runs (hook is unset), so `_run_refusal_window`
-			# still finishes without ever pausing.
-			wants_refuse = await human_refusal_hook.call(target_id, pending)
-		if wants_refuse:
-			tm.refuse(target_id, target_id, target_ref)
-		# Greedy AI does not counter-refuse — keeps Refusals for its own defense.
+			wants_refuse = await human_refusal_hook.call(target_id, pa)
+		if not wants_refuse:
+			return
+		tm.refuse(target_id, next_refuser_id, refusal_card)
 
 func _wants_to_refuse(gs: GameState, pending: PendingAction, target_id: int) -> bool:
 	if target_id != player_id:
