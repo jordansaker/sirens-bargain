@@ -1,8 +1,12 @@
 class_name MatchApi
 extends RefCounted
 
-# Thin async wrapper around the match-history HTTP API. POST after a match
-# completes; GET when the leaderboard opens.
+# Thin async wrapper around the match-history HTTP API.
+#   POST /matches      after a match completes.
+#     Required headers: x-sirens-timestamp (unix seconds) and
+#     x-sirens-signature (hex HMAC-SHA256 of "<timestamp>.<raw body>" with
+#     SECRET as the key).
+#   GET  /leaderboard  when the leaderboard screen opens.
 #
 # API expects and returns the same JSON shape per match:
 #   { "endedAt":    ISO-8601 UTC string,
@@ -16,17 +20,43 @@ extends RefCounted
 #   `highestRent` as a MAX across matches (biggest-ever rent per player).
 
 const BASE_URL := "https://hq.jordansakerdev.com/api/sirens-bargain"
+const POST_URL := BASE_URL + "/matches"
+const GET_URL := BASE_URL + "/leaderboard"
 # Shared key — this ships in the web build, so it's not a secret in the
 # security sense, just a coarse gate so random scans don't spam the server.
+# Doubles as the HMAC key for POST body signatures.
 const SECRET := "2dd527d8e29ecf9deeace5dead9397f1e8920d2e209888b0899e94fcc5bdcf79"
 
-static func _base_headers() -> PackedStringArray:
+static func _get_headers() -> PackedStringArray:
 	return PackedStringArray([
-		"Content-Type: application/json",
 		"Accept: application/json",
 		"X-Api-Key: %s" % SECRET,
 		"Authorization: Bearer %s" % SECRET,
 	])
+
+# POST /matches requires an HMAC signature over "<unix_seconds>.<raw_body>"
+# with SECRET as the key. Server rejects the request without both the
+# timestamp and matching signature headers.
+static func _post_headers(timestamp: int, body: String) -> PackedStringArray:
+	var sig := _hmac_sha256_hex(SECRET, "%d.%s" % [timestamp, body])
+	return PackedStringArray([
+		"Content-Type: application/json",
+		"Accept: application/json",
+		"x-sirens-timestamp: %d" % timestamp,
+		"x-sirens-signature: %s" % sig,
+	])
+
+# HMAC-SHA256(key, msg) → lowercase hex string. Uses Godot's built-in
+# HMACContext so no third-party crypto is needed for the web build.
+static func _hmac_sha256_hex(key: String, msg: String) -> String:
+	var ctx := HMACContext.new()
+	ctx.start(HashingContext.HASH_SHA256, key.to_utf8_buffer())
+	ctx.update(msg.to_utf8_buffer())
+	var raw: PackedByteArray = ctx.finish()
+	var out := ""
+	for b in raw:
+		out += "%02x" % b
+	return out
 
 # Fire-and-forget POST of a completed match. Cleans its own HTTPRequest up
 # on completion so callers don't have to manage the node's lifecycle.
@@ -47,8 +77,9 @@ static func post_match(host: Node, payload: Dictionary) -> void:
 		http.queue_free()
 	)
 	var body := JSON.stringify(payload)
-	print("[MatchApi] POST %s body=%s" % [BASE_URL, body])
-	var err := http.request(BASE_URL, _base_headers(), HTTPClient.METHOD_POST, body)
+	var timestamp := int(Time.get_unix_time_from_system())
+	print("[MatchApi] POST %s body=%s" % [POST_URL, body])
+	var err := http.request(POST_URL, _post_headers(timestamp, body), HTTPClient.METHOD_POST, body)
 	if err != OK:
 		print("[MatchApi] POST couldn't start: err %d" % err)
 		push_warning("MatchApi POST couldn't start: err %d" % err)
@@ -63,9 +94,11 @@ static func fetch_matches(host: Node, on_done: Callable) -> void:
 	var http := HTTPRequest.new()
 	host.add_child(http)
 	http.request_completed.connect(func(_result: int, code: int, _hdrs: PackedStringArray, body: PackedByteArray) -> void:
+		var body_text := body.get_string_from_utf8()
 		var matches: Array = []
 		if code >= 200 and code < 300:
-			var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
+			print("[MatchApi] GET ok HTTP %d" % code)
+			var parsed: Variant = JSON.parse_string(body_text)
 			if parsed is Array:
 				matches = parsed as Array
 			elif parsed is Dictionary and (parsed as Dictionary).has("matches"):
@@ -73,12 +106,15 @@ static func fetch_matches(host: Node, on_done: Callable) -> void:
 				if m is Array:
 					matches = m
 		else:
-			push_warning("MatchApi GET HTTP %d: %s" % [code, body.get_string_from_utf8()])
+			print("[MatchApi] GET failed HTTP %d: %s" % [code, body_text])
+			push_warning("MatchApi GET HTTP %d: %s" % [code, body_text])
 		http.queue_free()
 		on_done.call(matches)
 	)
-	var err := http.request(BASE_URL, _base_headers(), HTTPClient.METHOD_GET)
+	print("[MatchApi] GET %s" % GET_URL)
+	var err := http.request(GET_URL, _get_headers(), HTTPClient.METHOD_GET)
 	if err != OK:
+		print("[MatchApi] GET couldn't start: err %d" % err)
 		push_warning("MatchApi GET couldn't start: err %d" % err)
 		http.queue_free()
 		on_done.call([])
