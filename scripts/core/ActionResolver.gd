@@ -59,7 +59,9 @@ static func slippery_eel(
 	var source_realm := _find_realm(target, stolen_card)
 	if source_realm == "":
 		return false
-	if target.is_realm_complete(source_realm):
+	# Allow when the source realm has a surplus card OR is still incomplete
+	# — Kraken owns the "steal a complete set with no surplus" case.
+	if not target.has_stealable_loose_card(source_realm):
 		return false
 	if not stolen_card.can_be_assigned_to(dest_realm):
 		return false
@@ -93,12 +95,12 @@ static func trade_winds(
 	var own_source := _find_realm(initiator, own_card)
 	if own_source == "":
 		return false
-	if initiator.is_realm_complete(own_source):
+	if not initiator.has_stealable_loose_card(own_source):
 		return false
 	var their_source := _find_realm(target, their_card)
 	if their_source == "":
 		return false
-	if target.is_realm_complete(their_source):
+	if not target.has_stealable_loose_card(their_source):
 		return false
 	if not own_card.can_be_assigned_to(their_dest_realm):
 		return false
@@ -180,7 +182,7 @@ static func can_slippery_eel(
 	var source_realm := _find_realm(target, stolen_card)
 	if source_realm == "":
 		return false
-	if target.is_realm_complete(source_realm):
+	if not target.has_stealable_loose_card(source_realm):
 		return false
 	return stolen_card.can_be_assigned_to(dest_realm)
 
@@ -201,12 +203,12 @@ static func can_trade_winds(
 	var own_source := _find_realm(initiator, own_card)
 	if own_source == "":
 		return false
-	if initiator.is_realm_complete(own_source):
+	if not initiator.has_stealable_loose_card(own_source):
 		return false
 	var their_source := _find_realm(target, their_card)
 	if their_source == "":
 		return false
-	if target.is_realm_complete(their_source):
+	if not target.has_stealable_loose_card(their_source):
 		return false
 	if not own_card.can_be_assigned_to(their_dest_realm):
 		return false

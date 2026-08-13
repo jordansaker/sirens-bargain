@@ -361,7 +361,9 @@ func _try_slippery_eel(tm: TurnManager, all_ais: Dictionary) -> bool:
 	var best_dest := ""
 	var best_score := -1
 	for r in target.realms.keys():
-		if target.is_realm_complete(r):
+		# Include complete sets that have surplus — the resolver now allows
+		# stealing surplus without breaking the set below its target size.
+		if not target.has_stealable_loose_card(r):
 			continue
 		var stack: Array = target.realms[r]
 		for c in stack:

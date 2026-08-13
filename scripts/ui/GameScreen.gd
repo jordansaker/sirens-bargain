@@ -2080,8 +2080,8 @@ func _on_opp_chip_pressed(player_id: int, realm_name: String) -> void:
 		if player_id != pick_target:
 			return
 		var opp: PlayerState = _gs.players[player_id]
-		if opp.is_realm_complete(realm_name):
-			_prompt("Can only take a loose card from an incomplete set.")
+		if not opp.has_stealable_loose_card(realm_name):
+			_prompt("No loose card here — complete sets without surplus are safe.")
 			return
 		var stack: Array = opp.realms.get(realm_name, [])
 		if stack.is_empty():
@@ -2139,10 +2139,11 @@ func _on_own_chip_pressed(player_id: int, realm_name: String) -> void:
 		await _tribute_pick_target(realm_name)
 		return
 	elif _state == InteractionState.SELECT_OWN_CARD_FOR_TRADE:
-		# Trade Winds — pick which of your own loose cards to hand over.
+		# Trade Winds — pick which of your own loose (or surplus) cards to
+		# hand over. Complete sets with no surplus are safe.
 		var me: PlayerState = _gs.players[HUMAN_ID]
-		if me.is_realm_complete(realm_name):
-			_prompt("Can only give up a loose card from an incomplete set.")
+		if not me.has_stealable_loose_card(realm_name):
+			_prompt("No loose card here — complete sets without surplus are safe.")
 			return
 		var stack: Array = me.realms.get(realm_name, [])
 		if stack.is_empty():
@@ -2344,12 +2345,11 @@ func _do_kraken(target_id: int, realm_name: String) -> void:
 func _eel_pick_card(target_id: int) -> void:
 	_hide_menu()
 	var opp: PlayerState = _gs.players[target_id]
-	# Enumerate incomplete realms with at least one loose card.
+	# Enumerate realms with at least one takeable card — incomplete sets or
+	# complete sets with surplus (Kraken still owns the no-surplus case).
 	var stealable_realms: Array[String] = []
 	for r in opp.realms.keys():
-		if opp.is_realm_complete(r):
-			continue
-		if (opp.realms[r] as Array).is_empty():
+		if not opp.has_stealable_loose_card(r):
 			continue
 		stealable_realms.append(r)
 	if stealable_realms.is_empty():
@@ -2445,11 +2445,10 @@ func _trade_pick_their_card(target_id: int) -> void:
 	_hide_menu()
 	_ctx["trade_target"] = target_id
 	var opp: PlayerState = _gs.players[target_id]
+	# Same "any card in an incomplete-or-surplus set" rule as Eel.
 	var stealable_realms: Array[String] = []
 	for r in opp.realms.keys():
-		if opp.is_realm_complete(r):
-			continue
-		if (opp.realms[r] as Array).is_empty():
+		if not opp.has_stealable_loose_card(r):
 			continue
 		stealable_realms.append(r)
 	if stealable_realms.is_empty():
@@ -2475,13 +2474,11 @@ func _trade_theirs_picked(card: CardData) -> void:
 			_show_realm_peek(pid, realm, Callable(self, "_trade_theirs_picked"))
 		return
 	_ctx["trade_their_card"] = card
-	# Now pick one of our own loose cards to hand over.
+	# Now pick one of our own loose or surplus cards to hand over.
 	var human: PlayerState = _gs.players[HUMAN_ID]
 	var own_realms: Array[String] = []
 	for r in human.realms.keys():
-		if human.is_realm_complete(r):
-			continue
-		if (human.realms[r] as Array).is_empty():
+		if not human.has_stealable_loose_card(r):
 			continue
 		own_realms.append(r)
 	if own_realms.is_empty():

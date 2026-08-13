@@ -80,6 +80,17 @@ func is_realm_complete(realm: String) -> bool:
 	var stack: Array[CardData] = realms[realm]
 	return stack.size() >= Realms.size_of(realm)
 
+# Whether at least one card in this realm can be taken via Eel / Trade Winds
+# without dropping the set below its target size. True when the realm still
+# has surplus cards (stack > target) OR is still incomplete (any card is
+# loose). Completed-with-no-surplus sets protect their cards — the whole set
+# only moves via Kraken.
+func has_stealable_loose_card(realm: String) -> bool:
+	var stack: Array = realms.get(realm, [])
+	if stack.is_empty():
+		return false
+	return stack.size() > Realms.size_of(realm) or not is_realm_complete(realm)
+
 func completed_realm_count() -> int:
 	var count := 0
 	for r in realms.keys():
