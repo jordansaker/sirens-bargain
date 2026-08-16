@@ -3061,6 +3061,12 @@ func _on_discard_pile_input(event: InputEvent) -> void:
 # Peek modal showing the full discard pile — most recent card first so it
 # reads as a play history. Purely informational, no picker mode.
 func _show_discard_peek() -> void:
+	# Payment picker is up — never let a bank / discard / realm peek
+	# overwrite it. The picker MUST stay visible until _payment_answered
+	# fires (via Confirm or Auto); anything that hid it silently before
+	# was leaving both peers stuck waiting on that signal.
+	if _ctx.has("pay_pending"):
+		return
 	var count := _gs.discard_pile.size()
 	_peek_title.text = "Discard pile"
 	_peek_subtitle.text = "%d card%s discarded" % [count, "" if count == 1 else "s"]
@@ -3089,6 +3095,8 @@ func _show_discard_peek() -> void:
 	_peek_root.visible = true
 
 func _show_bank_peek(player_id: int) -> void:
+	if _ctx.has("pay_pending"):
+		return
 	var player: PlayerState = _gs.players[player_id]
 	_peek_title.text = "Your bank"
 	var total := player.total_bank_value()
@@ -3122,6 +3130,8 @@ func _show_bank_peek(player_id: int) -> void:
 	_peek_root.visible = true
 
 func _show_realm_peek(player_id: int, realm_name: String, pick_cb: Callable = Callable()) -> void:
+	if _ctx.has("pay_pending"):
+		return
 	var player: PlayerState = _gs.players[player_id]
 	var stack: Array = player.realms.get(realm_name, [])
 	_peek_title.text = realm_name
@@ -3646,6 +3656,11 @@ func _apply_inner_panel_style(p: Panel) -> void:
 
 func _show_card_peek(card: CardData) -> void:
 	if card == null:
+		return
+	# Never obscure an in-flight payment picker with the card-zoom modal —
+	# it lives on the same overlay layer and would swallow the picker's
+	# await, hanging both peers.
+	if _ctx.has("pay_pending"):
 		return
 	_card_peek_card = card
 
