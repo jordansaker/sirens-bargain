@@ -186,6 +186,11 @@ var _plays_dots: HBoxContainer = null
 # Match timer + stats — populated at setup, updated live via TurnManager
 # signals, snapshotted onto the game-over card list.
 var _match_start_msec: int = 0
+# One-shot latch — _show_game_over runs on every board refresh once the game
+# ends, but the match POST must only fire once. Also lets us reopen the
+# summary panel (via the "Show summary" affordance below) without POSTing
+# the result a second time.
+var _summary_posted: bool = false
 var _match_stats: Dictionary = {} # player_id -> {"pearls":int,"steals":int,"tributes":int}
 var _turns_played: int = 0
 
@@ -923,8 +928,12 @@ func _run_ai_turns() -> void:
 func _show_game_over() -> void:
 	_state = InteractionState.GAME_OVER
 	# POST to the match-history API before we rebuild the summary UI so
-	# stats reflect the moment the winning play landed.
-	_post_match_summary()
+	# stats reflect the moment the winning play landed. Latched — reopening
+	# the summary later (via the End-turn "Show summary" button) must NOT
+	# re-post.
+	if not _summary_posted:
+		_post_match_summary()
+		_summary_posted = true
 	# Widen + tall enough for two player cards + button rows. Uses fixed
 	# offset (anchored centre) so it works on any viewport size.
 	_game_over_panel.offset_left = -230
@@ -1008,6 +1017,17 @@ func _build_game_over_content(vbox: VBoxContainer) -> void:
 	rematch.pressed.connect(_on_play_again_pressed)
 	vbox.add_child(rematch)
 
+	# Dismiss button — hides the summary so the player can inspect the final
+	# board (realms, banks, discard). Reopen via the End-turn slot which
+	# repurposes as "Show summary" while the panel is hidden.
+	var view_btn := Button.new()
+	view_btn.text = "View board"
+	view_btn.custom_minimum_size = Vector2(0, 44)
+	view_btn.add_theme_font_size_override("font_size", 14)
+	_style_button_as(view_btn, "ghost")
+	view_btn.pressed.connect(_dismiss_game_over_summary)
+	vbox.add_child(view_btn)
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	vbox.add_child(row)
@@ -1029,6 +1049,21 @@ func _build_game_over_content(vbox: VBoxContainer) -> void:
 	_style_button_as(mm_btn, "ghost")
 	mm_btn.pressed.connect(_on_main_menu_pressed)
 	row.add_child(mm_btn)
+
+# Hide the summary overlay without leaving GAME_OVER — lets the player scan
+# realms/banks/discard after the match. The End-turn button then reads
+# "Show summary" and reopens the panel on tap (see _refresh_actions).
+func _dismiss_game_over_summary() -> void:
+	_hide_game_over()
+	_refresh_actions()
+
+func _reopen_game_over_summary() -> void:
+	if _state != InteractionState.GAME_OVER:
+		return
+	# Rebuilds the content from current _gs — safe post-match since the state
+	# is frozen. _summary_posted latch prevents a second POST.
+	_show_game_over()
+	_refresh_actions()
 
 func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 	var card := PanelContainer.new()
@@ -1755,11 +1790,19 @@ func _on_hand_drag_ended(card: CardData, _gpos: Vector2) -> void:
 
 func _refresh_actions() -> void:
 	if _state == InteractionState.GAME_OVER:
-		# Game-over overlay owns the flow — the underlying bar just goes quiet.
+		# Bank/Play stay dead — nothing more to play. If the player has
+		# dismissed the summary overlay to inspect the board, repurpose the
+		# End-turn slot as "Show summary" so they can pull the panel back
+		# without navigating away.
 		_bank_button.disabled = true
 		_play_button.disabled = true
-		_end_turn_button.disabled = true
-		_end_turn_button.text = "End turn"
+		var summary_visible := _game_over_panel != null and _game_over_panel.visible
+		if summary_visible:
+			_end_turn_button.disabled = true
+			_end_turn_button.text = "End turn"
+		else:
+			_end_turn_button.disabled = false
+			_end_turn_button.text = "Show summary"
 		return
 	if _state == InteractionState.DISCARD:
 		_bank_button.disabled = true
@@ -2039,6 +2082,10 @@ func _on_play_pressed() -> void:
 
 func _on_end_turn_pressed() -> void:
 	if _state == InteractionState.GAME_OVER:
+		# End-turn slot doubles as "Show summary" once the player has
+		# dismissed the overlay — bring the panel back on tap.
+		if _game_over_panel != null and not _game_over_panel.visible:
+			_reopen_game_over_summary()
 		return
 	if _state == InteractionState.DISCARD:
 		var need: int = int(_ctx.get("discard_needed", 0))
