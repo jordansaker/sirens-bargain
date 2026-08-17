@@ -312,23 +312,11 @@ func _track_play_for_stats(actor_id: int, text: String) -> void:
 	# "(Kraken's Grasp)" — count as one steal for the actor.
 	if text.find("(Slippery Eel)") != -1 or text.find("(Kraken's Grasp)") != -1:
 		_match_stats[actor_id]["steals"] += 1
-	# Tribute-family ATTEMPTS. Previously matched the RESOLVE-phase log
-	# ("Tribute on X — every opponent owes Y") which fires only when the
-	# tribute isn't fully refused — so a player facing an opponent who spams
-	# Siren's Refusal ended up with a huge undercount of their own tributes.
-	# Match the initiate-phase "played X" line instead, so every attempt
-	# counts regardless of whether it was refused. Guarded on begins_with
-	# "played " so payment-log lines like "paid 3 P (Deep Tribute)" that
-	# also contain "Tribute" don't false-match.
-	if text.begins_with("played "):
-		var s := text.substr(7)
-		var is_tribute := \
-			s.begins_with("Toll of the Tides on P") \
-			or s.begins_with("Mermaid's Feast") \
-			or s.begins_with("Siren's Toll on P") \
-			or s.find(" Tribute on their ") != -1
-		if is_tribute:
-			_match_stats[actor_id]["tributes"] += 1
+	# Resolved tribute-family debts: only fire once per action so we don't
+	# double-count on both initiate + resolve.
+	if text.begins_with("Tribute on ") or text.begins_with("Toll of the Tides") \
+			or text.begins_with("Mermaid's Feast") or text.begins_with("Siren's Toll"):
+		_match_stats[actor_id]["tributes"] += 1
 
 func _track_payment_for_stats(_payer_id: int, receiver_id: int, total: int, _card_count: int) -> void:
 	if not _match_stats.has(receiver_id):
