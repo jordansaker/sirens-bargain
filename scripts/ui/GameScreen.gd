@@ -1150,9 +1150,13 @@ func _build_player_card(player: PlayerState, is_winner: bool) -> PanelContainer:
 	col.add_child(stats)
 	var pstats: Dictionary = _match_stats.get(player.id, {"pearls": 0, "steals": 0, "tributes": 0, "highest_rent": 0, "moves": 0})
 	var moves_value: int = int(pstats.get("moves", 0)) if is_winner else 0
+	# PEARLS = total value of everything currently in the bank at game end
+	# (Pearls, action cards, tributes — anything with a pearl value). Was
+	# previously "pearls received in tribute payments", which misled players
+	# into thinking their action-card stack didn't count.
 	for spec in [
 		{"v": player.completed_realm_count(), "l": "REALMS"},
-		{"v": int(pstats.get("pearls", 0)), "l": "PEARLS"},
+		{"v": player.total_bank_value(), "l": "PEARLS"},
 		{"v": int(pstats.get("steals", 0)), "l": "STEALS"},
 		{"v": int(pstats.get("tributes", 0)), "l": "TRIBUTES"},
 		{"v": int(pstats.get("highest_rent", 0)), "l": "HIGH RENT"},
